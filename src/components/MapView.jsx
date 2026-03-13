@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 // 👇 STEP 2: Replace with your Mapbox public token
 // Found at: mapbox.com → Account → Access Tokens
-const MAPBOX_TOKEN = 'pk.eyJ1IjoiY2FybWVldGFwcCIsImEiOiJjbW1vemY0NWwwaWo2MnBvazEwcXN3eGl3In0.VzSvHEV_lIfm67HuFw1Cow'
-
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
