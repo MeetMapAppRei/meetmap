@@ -11,6 +11,7 @@ function AppInner() {
   const { user, loading: authLoading } = useAuth()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [view, setView] = useState('list')
   const [filterType, setFilterType] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -26,6 +27,7 @@ function AppInner() {
       setEvents(data || [])
     } catch (e) {
       console.error('Failed to load events:', e)
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -173,6 +175,13 @@ function AppInner() {
               <div style={{ fontSize: 36, marginBottom: 10 }}>⚙️</div>
               <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13 }}>Loading events...</div>
             </div>
+          ) : loadError ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#FF6B35', letterSpacing: 1, marginBottom: 8 }}>CONNECTION ERROR</div>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555', marginBottom: 20 }}>Could not load events. Check your connection and try again.</div>
+              <button onClick={() => { setLoadError(false); loadEvents() }} style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '10px 24px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}>RETRY</button>
+            </div>
           ) : events.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#333' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🚗</div>
@@ -231,6 +240,10 @@ function AppInner() {
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
           onAuthNeeded={handleAuthNeeded}
+          onDeleted={(id) => {
+            setEvents(prev => prev.filter(e => e.id !== id))
+            setSelectedEvent(null)
+          }}
         />
       )}
     </div>

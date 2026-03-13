@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { signIn, signUp } from '../lib/supabase'
+import { signIn, signUp, supabase } from '../lib/supabase'
 
 const S = {
   overlay: {
@@ -15,7 +15,7 @@ const S = {
     width: '100%', background: '#141414', border: '1px solid #222',
     borderRadius: 10, padding: '12px 14px', color: '#F0F0F0',
     fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none',
-    marginBottom: 12,
+    marginBottom: 12, colorScheme: 'dark',
   },
   btn: {
     width: '100%', background: '#FF6B35', color: '#0A0A0A',
@@ -28,10 +28,15 @@ const S = {
     borderRadius: 8, padding: '10px 14px', marginBottom: 12,
     fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#FF6060',
   },
+  success: {
+    background: '#0A1A0A', border: '1px solid #35FF6B',
+    borderRadius: 8, padding: '10px 14px', marginBottom: 12,
+    fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#60FF90',
+  },
 }
 
 export default function AuthModal({ onClose }) {
-  const [mode, setMode] = useState('login') // login | signup
+  const [mode, setMode] = useState('login') // login | signup | reset
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
@@ -47,18 +52,39 @@ export default function AuthModal({ onClose }) {
         const { error } = await signIn(email, password)
         if (error) throw error
         onClose()
-      } else {
+      } else if (mode === 'signup') {
         if (!username.trim()) throw new Error('Username is required')
+        if (password.length < 6) throw new Error('Password must be at least 6 characters')
         const { error } = await signUp(email, password, username)
         if (error) throw error
-        setSuccess('Check your email to confirm your account, then log in!')
+        setSuccess('Account created! You can now log in.')
+        setTimeout(() => { setMode('login'); setSuccess('') }, 2000)
+      } else if (mode === 'reset') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: 'https://meetmap-gilt.vercel.app',
+        })
+        if (error) throw error
+        setSuccess('Password reset email sent! Check your inbox.')
       }
     } catch (e) {
-      setError(e.message)
+      const msg = e.message || 'Something went wrong'
+      if (msg.includes('Invalid login')) setError('Incorrect email or password.')
+      else if (msg.includes('already registered')) setError('An account with this email already exists.')
+      else if (msg.includes('rate limit')) setError('Too many attempts. Please wait a few minutes and try again.')
+      else setError(msg)
     } finally {
       setLoading(false)
     }
   }
+
+  const switchMode = (newMode) => {
+    setMode(newMode)
+    setError('')
+    setSuccess('')
+  }
+
+  const titles = { login: 'WELCOME BACK', signup: 'JOIN THE SCENE', reset: 'RESET PASSWORD' }
+  const btnLabels = { login: 'LET ME IN', signup: 'CREATE ACCOUNT', reset: 'SEND RESET EMAIL' }
 
   return (
     <div style={S.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -66,49 +92,53 @@ export default function AuthModal({ onClose }) {
       <div style={S.sheet}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 2, color: '#FF6B35' }}>
-            {mode === 'login' ? 'WELCOME BACK' : 'JOIN THE SCENE'}
+            {titles[mode]}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#555', fontSize: 26, cursor: 'pointer' }}>×</button>
         </div>
 
         {error && <div style={S.error}>{error}</div>}
-        {success && (
-          <div style={{ ...S.error, borderColor: '#35FF6B', color: '#60FF90', background: '#0A1A0A' }}>
-            {success}
+        {success && <div style={S.success}>{success}</div>}
+
+        {mode === 'signup' && (
+          <input style={S.input} placeholder="Username (shown publicly)" value={username} onChange={e => setUsername(e.target.value)} />
+        )}
+
+        <input style={S.input} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+
+        {mode !== 'reset' && (
+          <input
+            style={S.input} type="password"
+            placeholder={mode === 'signup' ? 'Password (min 6 characters)' : 'Password'}
+            value={password} onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handle()}
+          />
+        )}
+
+        {mode === 'login' && (
+          <div style={{ textAlign: 'right', marginTop: -6, marginBottom: 8 }}>
+            <span onClick={() => switchMode('reset')} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555', cursor: 'pointer', textDecoration: 'underline' }}>
+              Forgot password?
+            </span>
           </div>
         )}
 
-        {mode === 'signup' && (
-          <input
-            style={S.input} placeholder="Username (shown publicly)"
-            value={username} onChange={e => setUsername(e.target.value)}
-          />
-        )}
-        <input
-          style={S.input} type="email" placeholder="Email"
-          value={email} onChange={e => setEmail(e.target.value)}
-        />
-        <input
-          style={S.input} type="password" placeholder="Password"
-          value={password} onChange={e => setPassword(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handle()}
-        />
-
         <button style={{ ...S.btn, opacity: loading ? 0.6 : 1 }} onClick={handle} disabled={loading}>
-          {loading ? 'LOADING...' : mode === 'login' ? 'LET ME IN' : 'CREATE ACCOUNT'}
+          {loading ? 'LOADING...' : btnLabels[mode]}
         </button>
 
-        <div style={{
-          fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555',
-          textAlign: 'center', marginTop: 20,
-        }}>
-          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-          <span
-            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setSuccess('') }}
-            style={{ color: '#FF6B35', cursor: 'pointer', textDecoration: 'underline' }}
-          >
-            {mode === 'login' ? 'Sign up' : 'Log in'}
-          </span>
+        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555', textAlign: 'center', marginTop: 20 }}>
+          {mode === 'login' && <>
+            Don't have an account?{' '}
+            <span onClick={() => switchMode('signup')} style={{ color: '#FF6B35', cursor: 'pointer', textDecoration: 'underline' }}>Sign up free</span>
+          </>}
+          {mode === 'signup' && <>
+            Already have an account?{' '}
+            <span onClick={() => switchMode('login')} style={{ color: '#FF6B35', cursor: 'pointer', textDecoration: 'underline' }}>Log in</span>
+          </>}
+          {mode === 'reset' && <>
+            <span onClick={() => switchMode('login')} style={{ color: '#FF6B35', cursor: 'pointer', textDecoration: 'underline' }}>← Back to login</span>
+          </>}
         </div>
       </div>
     </div>
