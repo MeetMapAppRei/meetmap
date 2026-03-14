@@ -18,7 +18,7 @@ async function geocodeAddress(address) {
   return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
 }
 
-async function extractFlyerInfo(imageBase64) {
+async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
   const response = await fetch('/api/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -30,7 +30,7 @@ async function extractFlyerInfo(imageBase64) {
         content: [
           {
             type: 'image',
-            source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 }
+            source: { type: 'base64', media_type: mediaType, data: imageBase64 }
           },
           {
             type: 'text',
@@ -91,13 +91,14 @@ export default function PostEventForm({ onClose, onPosted }) {
     setFlyerSuccess(false)
     try {
       // Convert to base64
+      const mediaType = file.type || 'image/jpeg'
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result.split(',')[1])
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
-      const info = await extractFlyerInfo(base64)
+      const info = await extractFlyerInfo(base64, mediaType)
       // Fill in the form with extracted info
       setForm(prev => ({
         ...prev,
