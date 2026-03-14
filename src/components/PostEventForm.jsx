@@ -18,17 +18,61 @@ async function geocodeAddress(address) {
   return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
 }
 
+async function extractFlyerInfo(imageBase64) {
+  const response = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 }
+          },
+          {
+            type: 'text',
+            text: `Extract car meet event info from this flyer. Return ONLY a JSON object with these fields (no markdown, no explanation):
+{
+  "title": "event name",
+  "type": "meet|car show|track day|cruise",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM",
+  "location": "venue/spot name",
+  "address": "full street address if visible",
+  "city": "City, ST",
+  "host": "organizer name",
+  "description": "any details about the event",
+  "tags": "comma separated tags like JDM, All Makes, etc"
+}
+If a field is not found, use empty string. For date, convert to YYYY-MM-DD format. For time use 24hr format.`
+          }
+        ]
+      }]
+    })
+  })
+  const data = await response.json()
+  const text = data.content?.[0]?.text || ''
+  const clean = text.replace(/```json|```/g, '').trim()
+  return JSON.parse(clean)
+}
+
 export default function PostEventForm({ onClose, onPosted }) {
   const { user } = useAuth()
   const fileRef = useRef()
+  const flyerRef = useRef()
   const [form, setForm] = useState({ title: '', type: 'meet', date: '', time: '', location: '', city: '', address: '', description: '', tags: '', host: '' })
   const [coords, setCoords] = useState(null)
   const [photo, setPhoto] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
   const [error, setError] = useState('')
   const [addressStatus, setAddressStatus] = useState('')
+  const [flyerSuccess, setFlyerSuccess] = useState(false)
 
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }))
 
@@ -39,24 +83,57 @@ export default function PostEventForm({ onClose, onPosted }) {
     setPhotoPreview(URL.createObjectURL(file))
   }
 
+  const handleFlyerUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setScanning(true)
+    setError('')
+    setFlyerSuccess(false)
+    try {
+      // Convert to base64
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const info = await extractFlyerInfo(base64)
+      // Fill in the form with extracted info
+      setForm(prev => ({
+        ...prev,
+        title: info.title || prev.title,
+        type: info.type || prev.type,
+        date: info.date || prev.date,
+        time: info.time || prev.time,
+        location: info.location || prev.location,
+        address: info.address || prev.address,
+        city: info.city || prev.city,
+        host: info.host || prev.host,
+        description: info.description || prev.description,
+        tags: info.tags || prev.tags,
+      }))
+      setFlyerSuccess(true)
+      // Auto-geocode if address was found
+      if (info.address) {
+        const result = await geocodeAddress(info.address)
+        if (result) { setCoords(result); setAddressStatus('found') }
+      }
+    } catch (e) {
+      setError('Could not read flyer. Try a clearer image or fill in manually.')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   const handleAddressBlur = async () => {
     if (!form.address.trim()) return
-    setGeocoding(true)
-    setAddressStatus('')
-    setCoords(null)
+    setGeocoding(true); setAddressStatus(''); setCoords(null)
     try {
       const result = await geocodeAddress(form.address)
-      if (result) {
-        setCoords(result)
-        setAddressStatus('found')
-      } else {
-        setAddressStatus('notfound')
-      }
-    } catch {
-      setAddressStatus('error')
-    } finally {
-      setGeocoding(false)
-    }
+      if (result) { setCoords(result); setAddressStatus('found') }
+      else setAddressStatus('notfound')
+    } catch { setAddressStatus('error') }
+    finally { setGeocoding(false) }
   }
 
   const handleSubmit = async () => {
@@ -64,13 +141,10 @@ export default function PostEventForm({ onClose, onPosted }) {
       setError('Please fill in all required fields.')
       return
     }
-    setError('')
-    setLoading(true)
+    setError(''); setLoading(true)
     try {
       let finalCoords = coords
-      if (form.address && !finalCoords) {
-        finalCoords = await geocodeAddress(form.address)
-      }
+      if (form.address && !finalCoords) finalCoords = await geocodeAddress(form.address).catch(() => null)
       const tagsArray = form.tags.split(',').map(t => t.trim()).filter(Boolean)
       const eventPayload = {
         title: form.title, type: form.type, date: form.date, time: form.time,
@@ -86,26 +160,49 @@ export default function PostEventForm({ onClose, onPosted }) {
         await supabase.from('events').update({ photo_url: photoUrl }).eq('id', created.id)
         created.photo_url = photoUrl
       }
-      onPosted(created)
-      onClose()
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+      onPosted(created); onClose()
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
   }
 
   return (
     <div style={S.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
-      <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+      <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+      @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       <div style={S.sheet}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, letterSpacing: 2, color: '#FF6B35' }}>POST A MEET</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#555', fontSize: 26, cursor: 'pointer' }}>×</button>
         </div>
 
-        {error && <div style={{ background: '#1A0A0A', border: '1px solid #FF3535', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#FF6060' }}>{error}</div>}
+        {/* FLYER IMPORT BUTTON */}
+        <div
+          onClick={() => flyerRef.current.click()}
+          style={{
+            border: scanning ? '2px solid #FF6B35' : '2px dashed #FF6B3555',
+            borderRadius: 12, padding: '14px', marginBottom: 18,
+            cursor: scanning ? 'default' : 'pointer',
+            background: flyerSuccess ? '#0A1A0A' : '#0F0F0F',
+            display: 'flex', alignItems: 'center', gap: 12,
+            transition: 'all 0.2s',
+          }}
+        >
+          <div style={{ fontSize: 28 }}>{scanning ? '⏳' : flyerSuccess ? '✅' : '📸'}</div>
+          <div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1.5, color: flyerSuccess ? '#7CFF6B' : '#FF6B35' }}>
+              {scanning ? 'READING FLYER...' : flyerSuccess ? 'FLYER IMPORTED!' : 'IMPORT FROM FLYER'}
+            </div>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#555', marginTop: 2 }}>
+              {scanning ? 'AI is extracting event details...' : flyerSuccess ? 'Review the details below and edit if needed' : 'Upload a flyer and AI will fill in the details'}
+            </div>
+          </div>
+          {scanning && <div style={{ marginLeft: 'auto', width: 18, height: 18, border: '2px solid #FF6B35', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />}
+        </div>
+        <input ref={flyerRef} type="file" accept="image/*" onChange={handleFlyerUpload} style={{ display: 'none' }} />
 
+        {error && <div style={{ background: '#1A0A0A', border: '1px solid #FF353544', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#FF6060' }}>{error}</div>}
+
+        {/* Photo upload */}
         <label style={S.label}>Event Photo</label>
         <div onClick={() => fileRef.current.click()} style={{ border: '2px dashed #222', borderRadius: 10, marginBottom: 14, height: photoPreview ? 180 : 90, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#111' }}>
           {photoPreview ? <img src={photoPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="preview" /> : <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, marginBottom: 4 }}>📸</div><div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555' }}>Tap to add a photo</div></div>}
@@ -123,7 +220,7 @@ export default function PostEventForm({ onClose, onPosted }) {
         <label style={S.label}>Event Name *</label>
         <input style={S.input} placeholder="Sunday Funday Car Meet" value={form.title} onChange={e => set('title', e.target.value)} />
 
-        <label style={S.label}>Street Address (places a pin on the map)</label>
+        <label style={S.label}>Street Address (for map pin)</label>
         <input
           style={{ ...S.input, marginBottom: 4, borderColor: addressStatus === 'found' ? '#FF6B3580' : '#222' }}
           placeholder="123 Main St, Riverside, CA 92501"
