@@ -47,7 +47,7 @@ async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
   "description": "any details about the event",
   "tags": "comma separated tags like JDM, All Makes, etc"
 }
-If a field is not found, use empty string. For date, convert to YYYY-MM-DD format. For time use 24hr format.`
+If a field is not found, use empty string. For date, convert to YYYY-MM-DD format using the current year ${new Date().getFullYear()} if no year is specified on the flyer. For time use 24hr format.`
           }
         ]
       }]
