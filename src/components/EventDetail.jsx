@@ -1,21 +1,186 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchComments, postComment, toggleAttendance, getAttendanceStatus, supabase } from '../lib/supabase'
+import { fetchComments, postComment, toggleAttendance, getAttendanceStatus, updateEvent, uploadEventPhoto, supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
 
-export default function EventDetail({ event, onClose, onAuthNeeded, onDeleted }) {
+const S = {
+  label: { fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#555', letterSpacing: 1, display: 'block', marginBottom: 5, textTransform: 'uppercase' },
+  input: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark' },
+  select: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark', appearance: 'none' },
+}
+
+async function geocodeAddress(address) {
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`)
+  const data = await res.json()
+  if (!data.length) return null
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+}
+
+function EditForm({ event, onSaved, onCancel }) {
+  const fileRef = useRef()
+  const [form, setForm] = useState({
+    title: event.title || '',
+    type: event.type || 'meet',
+    date: event.date || '',
+    time: event.time || '',
+    location: event.location || '',
+    city: event.city || '',
+    address: event.address || '',
+    description: event.description || '',
+    tags: (event.tags || []).join(', '),
+    host: event.host || '',
+  })
+  const [photo, setPhoto] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState(event.photo_url || null)
+  const [coords, setCoords] = useState(event.lat && event.lng ? { lat: event.lat, lng: event.lng } : null)
+  const [geocoding, setGeocoding] = useState(false)
+  const [addressStatus, setAddressStatus] = useState(event.lat ? 'found' : '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }))
+
+  const handleAddressBlur = async () => {
+    if (!form.address.trim()) return
+    setGeocoding(true); setAddressStatus(''); setCoords(null)
+    try {
+      const result = await geocodeAddress(form.address)
+      if (result) { setCoords(result); setAddressStatus('found') }
+      else setAddressStatus('notfound')
+    } catch { setAddressStatus('error') }
+    finally { setGeocoding(false) }
+  }
+
+  const handleSave = async () => {
+    if (!form.title || !form.date || !form.location || !form.city) {
+      setError('Please fill in all required fields.')
+      return
+    }
+    setError(''); setSaving(true)
+    try {
+      let finalCoords = coords
+      if (form.address && !finalCoords) finalCoords = await geocodeAddress(form.address).catch(() => null)
+
+      const tagsArray = form.tags.split(',').map(t => t.trim()).filter(Boolean)
+      const updates = {
+        title: form.title,
+        type: form.type,
+        date: form.date,
+        time: form.time,
+        location: form.location,
+        city: form.city,
+        address: form.address,
+        description: form.description,
+        tags: tagsArray,
+        host: form.host,
+        lat: finalCoords?.lat || null,
+        lng: finalCoords?.lng || null,
+      }
+
+      if (photo) {
+        const photoUrl = await uploadEventPhoto(photo, event.id)
+        updates.photo_url = photoUrl
+      }
+
+      const updated = await updateEvent(event.id, updates)
+      onSaved(updated)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ padding: '20px 20px 40px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, letterSpacing: 2, color: '#FF6B35' }}>EDIT EVENT</div>
+        <button onClick={onCancel} style={{ background: 'none', border: 'none', color: '#555', fontSize: 26, cursor: 'pointer' }}>×</button>
+      </div>
+
+      {error && <div style={{ background: '#1A0A0A', border: '1px solid #FF353544', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#FF6060' }}>{error}</div>}
+
+      {/* Photo */}
+      <label style={S.label}>Event Photo</label>
+      <div onClick={() => fileRef.current.click()} style={{ border: '2px dashed #222', borderRadius: 10, marginBottom: 14, height: photoPreview ? 160 : 80, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#111' }}>
+        {photoPreview
+          ? <img src={photoPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="preview" />
+          : <div style={{ textAlign: 'center' }}><div style={{ fontSize: 24 }}>📸</div><div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555' }}>Tap to change photo</div></div>}
+      </div>
+      <input ref={fileRef} type="file" accept="image/*" onChange={e => { const f = e.target.files[0]; if (f) { setPhoto(f); setPhotoPreview(URL.createObjectURL(f)) } }} style={{ display: 'none' }} />
+
+      <label style={S.label}>Event Type</label>
+      <select style={S.select} value={form.type} onChange={e => set('type', e.target.value)}>
+        <option value="meet">Meet</option>
+        <option value="car show">Car Show</option>
+        <option value="track day">Track Day</option>
+        <option value="cruise">Cruise</option>
+      </select>
+
+      <label style={S.label}>Event Name *</label>
+      <input style={S.input} value={form.title} onChange={e => set('title', e.target.value)} placeholder="Sunday Funday Car Meet" />
+
+      <label style={S.label}>Street Address</label>
+      <input
+        style={{ ...S.input, marginBottom: 4, borderColor: addressStatus === 'found' ? '#FF6B3580' : '#222' }}
+        value={form.address}
+        onChange={e => { set('address', e.target.value); setAddressStatus(''); setCoords(null) }}
+        onBlur={handleAddressBlur}
+        placeholder="123 Main St, Riverside, CA"
+      />
+      <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, marginBottom: 12, height: 16 }}>
+        {geocoding && <span style={{ color: '#555' }}>🔍 Looking up address...</span>}
+        {!geocoding && addressStatus === 'found' && <span style={{ color: '#FF6B35' }}>✓ Address found</span>}
+        {!geocoding && addressStatus === 'notfound' && <span style={{ color: '#FF9944' }}>⚠️ Address not found</span>}
+      </div>
+
+      <label style={S.label}>Venue / Spot Name *</label>
+      <input style={S.input} value={form.location} onChange={e => set('location', e.target.value)} placeholder="Walmart East Lot" />
+
+      <label style={S.label}>City, State *</label>
+      <input style={S.input} value={form.city} onChange={e => set('city', e.target.value)} placeholder="Riverside, CA" />
+
+      <label style={S.label}>Hosted By</label>
+      <input style={S.input} value={form.host} onChange={e => set('host', e.target.value)} placeholder="Your crew / org name" />
+
+      <label style={S.label}>Tags (comma separated)</label>
+      <input style={S.input} value={form.tags} onChange={e => set('tags', e.target.value)} placeholder="JDM, Stance, All Welcome" />
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div><label style={S.label}>Date *</label><input style={S.input} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
+        <div><label style={S.label}>Time</label><input style={S.input} type="time" value={form.time} onChange={e => set('time', e.target.value)} /></div>
+      </div>
+
+      <label style={S.label}>Details</label>
+      <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} placeholder="What's the vibe?" style={{ ...S.input, resize: 'none', marginBottom: 20 }} />
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={onCancel} style={{ flex: 1, background: 'transparent', color: '#666', border: '1px solid #222', borderRadius: 10, padding: 14, fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, cursor: 'pointer' }}>
+          CANCEL
+        </button>
+        <button onClick={handleSave} disabled={saving} style={{ flex: 2, background: saving ? '#333' : '#FF6B35', color: saving ? '#666' : '#0A0A0A', border: 'none', borderRadius: 10, padding: 14, fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1.5, cursor: saving ? 'default' : 'pointer' }}>
+          {saving ? 'SAVING...' : 'SAVE CHANGES'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded, onDeleted }) {
   const { user } = useAuth()
+  const [event, setEvent] = useState(initialEvent)
   const [comments, setComments] = useState([])
   const [commentText, setCommentText] = useState('')
   const [attending, setAttending] = useState(false)
-  const [attendeeCount, setAttendeeCount] = useState(event.attendee_count || 0)
+  const [attendeeCount, setAttendeeCount] = useState(initialEvent.attendee_count || 0)
   const [posting, setPosting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
   const bottomRef = useRef()
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
@@ -85,6 +250,20 @@ export default function EventDetail({ event, onClose, onAuthNeeded, onDeleted })
   const today = new Date().toISOString().split('T')[0]
   const isPast = event.date < today
 
+  if (editing) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 700, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+        <div style={{ width: '100%', maxWidth: 480, background: '#0F0F0F', borderRadius: '20px 20px 0 0', border: '1px solid #1A1A1A', maxHeight: '92vh', overflowY: 'auto' }}>
+          <EditForm
+            event={event}
+            onSaved={(updated) => { setEvent(updated); setEditing(false) }}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 700, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
@@ -142,7 +321,7 @@ export default function EventDetail({ event, onClose, onAuthNeeded, onDeleted })
           )}
 
           {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: isOwner ? 10 : 24 }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
             {!isPast && (
               <button onClick={handleAttend} style={{ flex: 2, background: attending ? 'transparent' : color, color: attending ? color : '#0A0A0A', border: `1px solid ${color}`, borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1.5, cursor: 'pointer' }}>
                 {attending ? `✓ YOU'RE GOING · ${attendeeCount}` : `I'M IN · ${attendeeCount} GOING`}
@@ -153,37 +332,29 @@ export default function EventDetail({ event, onClose, onAuthNeeded, onDeleted })
             </button>
           </div>
 
-          {/* Delete button — only shown to event owner */}
-          {isOwner && !confirmDelete && (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              style={{ width: '100%', background: 'transparent', color: '#555', border: '1px solid #222', borderRadius: 10, padding: '10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1, cursor: 'pointer', marginBottom: 24 }}
-            >
-              🗑 DELETE MY EVENT
-            </button>
-          )}
-
-          {/* Confirm delete */}
-          {isOwner && confirmDelete && (
-            <div style={{ background: '#1A0A0A', border: '1px solid #FF353544', borderRadius: 12, padding: '16px', marginBottom: 24 }}>
-              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#FF6060', marginBottom: 12, textAlign: 'center' }}>
-                Are you sure? This cannot be undone.
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
+          {/* Owner controls: Edit + Delete */}
+          {isOwner && (
+            <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+              <button
+                onClick={() => setEditing(true)}
+                style={{ flex: 1, background: '#141414', color: '#888', border: '1px solid #222', borderRadius: 10, padding: '10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1, cursor: 'pointer' }}
+              >
+                ✏️ EDIT
+              </button>
+              {!confirmDelete ? (
                 <button
-                  onClick={() => setConfirmDelete(false)}
-                  style={{ flex: 1, background: '#141414', color: '#888', border: '1px solid #222', borderRadius: 8, padding: '10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, cursor: 'pointer' }}
+                  onClick={() => setConfirmDelete(true)}
+                  style={{ flex: 1, background: 'transparent', color: '#555', border: '1px solid #1A1A1A', borderRadius: 10, padding: '10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1, cursor: 'pointer' }}
                 >
-                  CANCEL
+                  🗑 DELETE
                 </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  style={{ flex: 1, background: '#FF3535', color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, cursor: 'pointer', letterSpacing: 1 }}
-                >
-                  {deleting ? 'DELETING...' : 'YES, DELETE'}
-                </button>
-              </div>
+              ) : (
+                <div style={{ flex: 1, background: '#1A0A0A', border: '1px solid #FF353544', borderRadius: 10, padding: '10px', display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#FF6060' }}>Sure?</span>
+                  <button onClick={() => setConfirmDelete(false)} style={{ background: '#222', color: '#888', border: 'none', borderRadius: 6, padding: '4px 10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, cursor: 'pointer' }}>NO</button>
+                  <button onClick={handleDelete} disabled={deleting} style={{ background: '#FF3535', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, cursor: 'pointer' }}>{deleting ? '...' : 'YES'}</button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -60,6 +60,17 @@ export const createEvent = async (eventData, userId) => {
   return data
 }
 
+export const updateEvent = async (eventId, updates) => {
+  const { data, error } = await supabase
+    .from('events')
+    .update(updates)
+    .eq('id', eventId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 export const uploadEventPhoto = async (file, eventId) => {
   const ext = file.name.split('.').pop()
   const path = `events/${eventId}/${Date.now()}.${ext}`
