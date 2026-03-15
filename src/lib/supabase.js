@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 
 // 👇 STEP 1: Replace these with your Supabase project values
 // Found at: supabase.com → Your Project → Settings → API
-const SUPABASE_URL = 'https://wyjbiqgczacqrxwulsts.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5amJpcWdjemFjcXJ4d3Vsc3RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MTEyMjIsImV4cCI6MjA4ODk4NzIyMn0.I6Rk6Ea7GsJyGab0YBH68fDR0A3XPT14VSYz13073Nc'
+const SUPABASE_URL = 'YOUR_SUPABASE_URL'
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
@@ -36,6 +36,11 @@ export const fetchEvents = async (filters = {}) => {
     query = query.or(
       `title.ilike.%${filters.search}%,city.ilike.%${filters.search}%,tags.cs.{${filters.search}}`
     )
+  }
+  // Hide past events by default unless showPast is true
+  if (!filters.showPast) {
+    const today = new Date().toISOString().split('T')[0]
+    query = query.gte('date', today)
   }
 
   const { data, error } = await query

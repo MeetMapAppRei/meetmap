@@ -19,11 +19,12 @@ function AppInner() {
   const [showAuth, setShowAuth] = useState(false)
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
+  const [showPast, setShowPast] = useState(false)
 
   const loadEvents = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchEvents({ type: filterType, search: searchQuery })
+      const data = await fetchEvents({ type: filterType, search: searchQuery, showPast })
       setEvents(data || [])
     } catch (e) {
       console.error('Failed to load events:', e)
@@ -31,7 +32,7 @@ function AppInner() {
     } finally {
       setLoading(false)
     }
-  }, [filterType, searchQuery])
+  }, [filterType, searchQuery, showPast])
 
   useEffect(() => {
     loadEvents()
@@ -136,8 +137,8 @@ function AppInner() {
           />
         </div>
 
-        {/* Filter chips */}
-        <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
+        {/* Filter chips + past toggle */}
+        <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2, alignItems: 'center' }}>
           {['all', 'meet', 'car show', 'track day', 'cruise'].map(type => (
             <button
               key={type}
@@ -154,6 +155,19 @@ function AppInner() {
               {type === 'all' ? 'All Events' : type}
             </button>
           ))}
+          <button
+            onClick={() => setShowPast(p => !p)}
+            style={{
+              flexShrink: 0, background: showPast ? '#333' : '#111',
+              color: showPast ? '#aaa' : '#444',
+              border: '1px solid', borderColor: showPast ? '#444' : '#1A1A1A',
+              borderRadius: 20, padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {showPast ? '✓ Past Events' : 'Past Events'}
+          </button>
         </div>
       </div>
 
