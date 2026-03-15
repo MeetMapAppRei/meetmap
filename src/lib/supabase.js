@@ -1,13 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
-// 👇 STEP 1: Replace these with your Supabase project values
-// Found at: supabase.com → Your Project → Settings → API
-const SUPABASE_URL = 'YOUR_SUPABASE_URL'
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5amJpcWdjelFjcXJ4d3Vsc3RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMTEyMjIsImV4cCI6MjA4ODk4NzIyMn0.I6Rk6Ea7GsJyGab0YBH68fDR0A3XPT14VSYz13073Nc'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-// ── AUTH ──────────────────────────────────────────────
+// ═══ AUTH ═══════════════════════════════════════════════════
+
 export const signUp = (email, password, username) =>
   supabase.auth.signUp({
     email,
@@ -22,7 +21,8 @@ export const signOut = () => supabase.auth.signOut()
 
 export const getUser = () => supabase.auth.getUser()
 
-// ── EVENTS ────────────────────────────────────────────
+// ═══ EVENTS ══════════════════════════════════════════════════
+
 export const fetchEvents = async (filters = {}) => {
   let query = supabase
     .from('events')
@@ -32,11 +32,13 @@ export const fetchEvents = async (filters = {}) => {
   if (filters.type && filters.type !== 'all') {
     query = query.eq('type', filters.type)
   }
+
   if (filters.search) {
     query = query.or(
       `title.ilike.%${filters.search}%,city.ilike.%${filters.search}%,tags.cs.{${filters.search}}`
     )
   }
+
   // Hide past events by default unless showPast is true
   if (!filters.showPast) {
     const today = new Date().toISOString().split('T')[0]
@@ -67,7 +69,8 @@ export const uploadEventPhoto = async (file, eventId) => {
   return data.publicUrl
 }
 
-// ── ATTENDEES ─────────────────────────────────────────
+// ═══ ATTENDEES ═══════════════════════════════════════════════
+
 export const toggleAttendance = async (eventId, userId) => {
   const { data: existing } = await supabase
     .from('event_attendees')
@@ -95,7 +98,8 @@ export const getAttendanceStatus = async (eventId, userId) => {
   return !!data
 }
 
-// ── COMMENTS ──────────────────────────────────────────
+// ═══ COMMENTS ════════════════════════════════════════════════
+
 export const fetchComments = async (eventId) => {
   const { data, error } = await supabase
     .from('comments')
