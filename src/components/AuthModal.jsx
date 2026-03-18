@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { signIn, signUp, supabase } from '../lib/supabase'
+import { useTheme } from '../lib/ThemeContext'
 
 const S = {
   overlay: {
@@ -43,6 +44,36 @@ export default function AuthModal({ onClose }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const { isLight } = useTheme()
+
+  const overlayStyle = { ...S.overlay, background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background }
+  const sheetStyle = {
+    ...S.sheet,
+    background: isLight ? '#FFFFFF' : S.sheet.background,
+    border: `1px solid ${isLight ? '#E5E5E5' : '#1A1A1A'}`,
+  }
+  const inputStyle = {
+    ...S.input,
+    background: isLight ? '#FFFFFF' : S.input.background,
+    border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+    color: isLight ? '#111111' : S.input.color,
+    colorScheme: isLight ? 'light' : 'dark',
+  }
+  const errorStyle = {
+    ...S.error,
+    background: isLight ? '#FFF1F1' : S.error.background,
+    border: `1px solid ${isLight ? '#FF6B6B' : '#FF3535'}`,
+    color: isLight ? '#B00020' : S.error.color,
+  }
+  const successStyle = {
+    ...S.success,
+    background: isLight ? '#ECFFF2' : S.success.background,
+    border: `1px solid ${isLight ? '#35FF6B' : '#35FF6B'}`,
+    color: isLight ? '#0A7A22' : S.success.color,
+  }
+  const closeColor = isLight ? '#666' : '#555'
+  const helperText = isLight ? '#666' : '#555'
+  const forgotLinkColor = isLight ? '#FF6B35' : '#FF6B35'
 
   const handle = async () => {
     setError('')
@@ -87,28 +118,28 @@ export default function AuthModal({ onClose }) {
   const btnLabels = { login: 'LET ME IN', signup: 'CREATE ACCOUNT', reset: 'SEND RESET EMAIL' }
 
   return (
-    <div style={S.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onClose()}>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
-      <div style={S.sheet}>
+      <div style={sheetStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 2, color: '#FF6B35' }}>
             {titles[mode]}
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#555', fontSize: 26, cursor: 'pointer' }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: closeColor, fontSize: 26, cursor: 'pointer' }}>×</button>
         </div>
 
-        {error && <div style={S.error}>{error}</div>}
-        {success && <div style={S.success}>{success}</div>}
+        {error && <div style={errorStyle}>{error}</div>}
+        {success && <div style={successStyle}>{success}</div>}
 
         {mode === 'signup' && (
-          <input style={S.input} placeholder="Username (shown publicly)" value={username} onChange={e => setUsername(e.target.value)} />
+          <input style={inputStyle} placeholder="Username (shown publicly)" value={username} onChange={e => setUsername(e.target.value)} />
         )}
 
-        <input style={S.input} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+        <input style={inputStyle} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
 
         {mode !== 'reset' && (
           <input
-            style={S.input} type="password"
+            style={inputStyle} type="password"
             placeholder={mode === 'signup' ? 'Password (min 6 characters)' : 'Password'}
             value={password} onChange={e => setPassword(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handle()}
@@ -117,7 +148,7 @@ export default function AuthModal({ onClose }) {
 
         {mode === 'login' && (
           <div style={{ textAlign: 'right', marginTop: -6, marginBottom: 8 }}>
-            <span onClick={() => switchMode('reset')} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555', cursor: 'pointer', textDecoration: 'underline' }}>
+            <span onClick={() => switchMode('reset')} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: helperText, cursor: 'pointer', textDecoration: 'underline' }}>
               Forgot password?
             </span>
           </div>
@@ -127,17 +158,17 @@ export default function AuthModal({ onClose }) {
           {loading ? 'LOADING...' : btnLabels[mode]}
         </button>
 
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555', textAlign: 'center', marginTop: 20 }}>
+        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: helperText, textAlign: 'center', marginTop: 20 }}>
           {mode === 'login' && <>
             Don't have an account?{' '}
-            <span onClick={() => switchMode('signup')} style={{ color: '#FF6B35', cursor: 'pointer', textDecoration: 'underline' }}>Sign up free</span>
+            <span onClick={() => switchMode('signup')} style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}>Sign up free</span>
           </>}
           {mode === 'signup' && <>
             Already have an account?{' '}
-            <span onClick={() => switchMode('login')} style={{ color: '#FF6B35', cursor: 'pointer', textDecoration: 'underline' }}>Log in</span>
+            <span onClick={() => switchMode('login')} style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}>Log in</span>
           </>}
           {mode === 'reset' && <>
-            <span onClick={() => switchMode('login')} style={{ color: '#FF6B35', cursor: 'pointer', textDecoration: 'underline' }}>← Back to login</span>
+            <span onClick={() => switchMode('login')} style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}>← Back to login</span>
           </>}
         </div>
       </div>

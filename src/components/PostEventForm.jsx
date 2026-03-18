@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { createEvent, uploadEventPhoto } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { useTheme } from '../lib/ThemeContext'
 
 const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 600, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
@@ -61,6 +62,7 @@ If a field is not found, use empty string. For date, convert to YYYY-MM-DD forma
 
 export default function PostEventForm({ onClose, onPosted }) {
   const { user } = useAuth()
+  const { isLight } = useTheme()
   const fileRef = useRef()
   const flyerRef = useRef()
   const [form, setForm] = useState({ title: '', type: 'meet', date: '', time: '', location: '', city: '', address: '', description: '', tags: '', host: '' })
@@ -73,6 +75,42 @@ export default function PostEventForm({ onClose, onPosted }) {
   const [error, setError] = useState('')
   const [addressStatus, setAddressStatus] = useState('')
   const [flyerSuccess, setFlyerSuccess] = useState(false)
+
+  const overlayStyle = { ...S.overlay, background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background }
+  const sheetStyle = {
+    ...S.sheet,
+    background: isLight ? '#FFFFFF' : S.sheet.background,
+    border: `1px solid ${isLight ? '#E5E5E5' : '#1A1A1A'}`,
+  }
+  const labelStyle = { ...S.label, color: isLight ? '#666' : S.label.color }
+  const inputStyle = {
+    ...S.input,
+    background: isLight ? '#FFFFFF' : S.input.background,
+    border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+    color: isLight ? '#111111' : S.input.color,
+    colorScheme: isLight ? 'light' : 'dark',
+  }
+  const selectStyle = {
+    ...S.select,
+    background: isLight ? '#FFFFFF' : S.select.background,
+    border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+    color: isLight ? '#111111' : S.select.color,
+    colorScheme: isLight ? 'light' : 'dark',
+  }
+  const closeColor = isLight ? '#666' : '#555'
+  const errorStyle = {
+    background: isLight ? '#FFF1F1' : '#1A0A0A',
+    border: `1px solid ${isLight ? '#FF6B6B55' : '#FF353544'}`,
+    borderRadius: 8,
+    padding: '10px 14px',
+    marginBottom: 14,
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 13,
+    color: isLight ? '#B00020' : '#FF6060',
+  }
+  const photoBorder = isLight ? '#E5E5E5' : '#222'
+  const photoBg = isLight ? '#F7F7F7' : '#111'
+  const geocodeText = isLight ? '#666' : '#555'
 
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }))
 
@@ -167,13 +205,13 @@ export default function PostEventForm({ onClose, onPosted }) {
   }
 
   return (
-    <div style={S.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onClose()}>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-      <div style={S.sheet}>
+      <div style={sheetStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, letterSpacing: 2, color: '#FF6B35' }}>POST A MEET</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#555', fontSize: 26, cursor: 'pointer' }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: closeColor, fontSize: 26, cursor: 'pointer' }}>×</button>
         </div>
 
         {/* FLYER IMPORT BUTTON */}
@@ -183,7 +221,9 @@ export default function PostEventForm({ onClose, onPosted }) {
             border: scanning ? '2px solid #FF6B35' : '2px dashed #FF6B3555',
             borderRadius: 12, padding: '14px', marginBottom: 18,
             cursor: scanning ? 'default' : 'pointer',
-            background: flyerSuccess ? '#0A1A0A' : '#0F0F0F',
+            background: flyerSuccess
+              ? (isLight ? '#ECFFF2' : '#0A1A0A')
+              : (isLight ? '#FFFFFF' : '#0F0F0F'),
             display: 'flex', alignItems: 'center', gap: 12,
             transition: 'all 0.2s',
           }}
@@ -193,7 +233,7 @@ export default function PostEventForm({ onClose, onPosted }) {
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1.5, color: flyerSuccess ? '#7CFF6B' : '#FF6B35' }}>
               {scanning ? 'READING FLYER...' : flyerSuccess ? 'FLYER IMPORTED!' : 'IMPORT FROM FLYER'}
             </div>
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#555', marginTop: 2 }}>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: geocodeText, marginTop: 2 }}>
               {scanning ? 'AI is extracting event details...' : flyerSuccess ? 'Review the details below and edit if needed' : 'Upload a flyer and AI will fill in the details'}
             </div>
           </div>
@@ -201,61 +241,85 @@ export default function PostEventForm({ onClose, onPosted }) {
         </div>
         <input ref={flyerRef} type="file" accept="image/*" onChange={handleFlyerUpload} style={{ display: 'none' }} />
 
-        {error && <div style={{ background: '#1A0A0A', border: '1px solid #FF353544', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#FF6060' }}>{error}</div>}
+        {error && <div style={errorStyle}>{error}</div>}
 
         {/* Photo upload */}
-        <label style={S.label}>Event Photo</label>
-        <div onClick={() => fileRef.current.click()} style={{ border: '2px dashed #222', borderRadius: 10, marginBottom: 14, height: photoPreview ? 180 : 90, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#111' }}>
-          {photoPreview ? <img src={photoPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="preview" /> : <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, marginBottom: 4 }}>📸</div><div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555' }}>Tap to add a photo</div></div>}
+        <label style={labelStyle}>Event Photo</label>
+        <div
+          onClick={() => fileRef.current.click()}
+          style={{ border: `2px dashed ${photoBorder}`, borderRadius: 10, marginBottom: 14, height: photoPreview ? 180 : 90, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: photoBg }}
+        >
+          {photoPreview ? <img src={photoPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="preview" /> : <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, marginBottom: 4 }}>📸</div><div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: geocodeText }}>Tap to add a photo</div></div>}
         </div>
         <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} style={{ display: 'none' }} />
 
-        <label style={S.label}>Event Type</label>
-        <select style={S.select} value={form.type} onChange={e => set('type', e.target.value)}>
+        <label style={labelStyle}>Event Type</label>
+        <select style={selectStyle} value={form.type} onChange={e => set('type', e.target.value)}>
           <option value="meet">Meet</option>
           <option value="car show">Car Show</option>
           <option value="track day">Track Day</option>
           <option value="cruise">Cruise</option>
         </select>
 
-        <label style={S.label}>Event Name *</label>
-        <input style={S.input} placeholder="Sunday Funday Car Meet" value={form.title} onChange={e => set('title', e.target.value)} />
+        <label style={labelStyle}>Event Name *</label>
+        <input style={inputStyle} placeholder="Sunday Funday Car Meet" value={form.title} onChange={e => set('title', e.target.value)} />
 
-        <label style={S.label}>Street Address (for map pin)</label>
+        <label style={labelStyle}>Street Address (for map pin)</label>
         <input
-          style={{ ...S.input, marginBottom: 4, borderColor: addressStatus === 'found' ? '#FF6B3580' : '#222' }}
+          style={{ ...inputStyle, marginBottom: 4, borderColor: addressStatus === 'found' ? '#FF6B3580' : photoBorder }}
           placeholder="123 Main St, Riverside, CA 92501"
           value={form.address}
           onChange={e => { set('address', e.target.value); setAddressStatus(''); setCoords(null) }}
           onBlur={handleAddressBlur}
         />
         <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, marginBottom: 12, height: 16 }}>
-          {geocoding && <span style={{ color: '#555' }}>🔍 Looking up address...</span>}
+          {geocoding && <span style={{ color: geocodeText }}>🔍 Looking up address...</span>}
           {!geocoding && addressStatus === 'found' && <span style={{ color: '#FF6B35' }}>✓ Address found — pin will appear on map</span>}
           {!geocoding && addressStatus === 'notfound' && <span style={{ color: '#FF9944' }}>⚠️ Address not found — try adding city and state</span>}
         </div>
 
-        <label style={S.label}>Venue / Spot Name *</label>
-        <input style={S.input} placeholder="Walmart East Lot, AutoZone Parking" value={form.location} onChange={e => set('location', e.target.value)} />
+        <label style={labelStyle}>Venue / Spot Name *</label>
+        <input style={inputStyle} placeholder="Walmart East Lot, AutoZone Parking" value={form.location} onChange={e => set('location', e.target.value)} />
 
-        <label style={S.label}>City, State *</label>
-        <input style={S.input} placeholder="Riverside, CA" value={form.city} onChange={e => set('city', e.target.value)} />
+        <label style={labelStyle}>City, State *</label>
+        <input style={inputStyle} placeholder="Riverside, CA" value={form.city} onChange={e => set('city', e.target.value)} />
 
-        <label style={S.label}>Hosted By</label>
-        <input style={S.input} placeholder="Your crew / org name" value={form.host} onChange={e => set('host', e.target.value)} />
+        <label style={labelStyle}>Hosted By</label>
+        <input style={inputStyle} placeholder="Your crew / org name" value={form.host} onChange={e => set('host', e.target.value)} />
 
-        <label style={S.label}>Tags (comma separated)</label>
-        <input style={S.input} placeholder="JDM, Stance, All Welcome" value={form.tags} onChange={e => set('tags', e.target.value)} />
+        <label style={labelStyle}>Tags (comma separated)</label>
+        <input style={inputStyle} placeholder="JDM, Stance, All Welcome" value={form.tags} onChange={e => set('tags', e.target.value)} />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <div><label style={S.label}>Date *</label><input style={S.input} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
-          <div><label style={S.label}>Time</label><input style={S.input} type="time" value={form.time} onChange={e => set('time', e.target.value)} /></div>
+          <div><label style={labelStyle}>Date *</label><input style={inputStyle} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
+          <div><label style={labelStyle}>Time</label><input style={inputStyle} type="time" value={form.time} onChange={e => set('time', e.target.value)} /></div>
         </div>
 
-        <label style={S.label}>Details</label>
-        <textarea placeholder="What's the vibe? Rules, food trucks, special guests..." value={form.description} onChange={e => set('description', e.target.value)} rows={3} style={{ ...S.input, resize: 'none', marginBottom: 20 }} />
+        <label style={labelStyle}>Details</label>
+        <textarea
+          placeholder="What's the vibe? Rules, food trucks, special guests..."
+          value={form.description}
+          onChange={e => set('description', e.target.value)}
+          rows={3}
+          style={{ ...inputStyle, resize: 'none', marginBottom: 20 }}
+        />
 
-        <button onClick={handleSubmit} disabled={loading} style={{ width: '100%', background: loading ? '#333' : '#FF6B35', color: loading ? '#666' : '#0A0A0A', border: 'none', borderRadius: 10, padding: 14, fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, cursor: loading ? 'default' : 'pointer' }}>
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          style={{
+            width: '100%',
+            background: loading ? (isLight ? '#E5E5E5' : '#333') : '#FF6B35',
+            color: loading ? (isLight ? '#666' : '#666') : '#0A0A0A',
+            border: 'none',
+            borderRadius: 10,
+            padding: 14,
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: 20,
+            letterSpacing: 2,
+            cursor: loading ? 'default' : 'pointer',
+          }}
+        >
           {loading ? 'POSTING...' : 'DROP THE PIN 📍'}
         </button>
       </div>
