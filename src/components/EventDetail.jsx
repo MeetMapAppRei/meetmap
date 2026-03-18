@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchComments, postComment, toggleAttendance, getAttendanceStatus, updateEvent, uploadEventPhoto, supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { useTheme } from '../lib/ThemeContext'
 
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
@@ -171,6 +172,7 @@ function EditForm({ event, onSaved, onCancel }) {
 
 export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded, onDeleted, onUpdated }) {
   const { user } = useAuth()
+  const { isLight } = useTheme()
   const [event, setEvent] = useState(initialEvent)
   const [comments, setComments] = useState([])
   const [commentText, setCommentText] = useState('')
@@ -250,10 +252,25 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
   const today = new Date().toISOString().split('T')[0]
   const isPast = event.date < today
 
+  const overlayBg = isLight ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.92)'
+  const panelBg = isLight ? '#FFFFFF' : '#0F0F0F'
+  const panelBorder = isLight ? '#E5E5E5' : '#1A1A1A'
+  const dividerBg = isLight ? '#E5E5E5' : '#1A1A1A'
+  const closeBg = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.6)'
+  const closeColor = isLight ? '#333' : '#fff'
+  const muted = isLight ? '#666' : '#888'
+  const muted2 = isLight ? '#777' : '#555'
+  const inputBg = isLight ? '#FFFFFF' : '#141414'
+  const inputBorder = isLight ? '#E5E5E5' : '#222'
+  const commentsText = isLight ? '#666' : '#888'
+  const shareBg = isLight ? '#F2F2F2' : '#141414'
+  const shareBorder = isLight ? '#E5E5E5' : '#222'
+  const shareText = isLight ? '#666' : '#888'
+
   if (editing) {
     return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 700, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-        <div style={{ width: '100%', maxWidth: 480, background: '#0F0F0F', borderRadius: '20px 20px 0 0', border: '1px solid #1A1A1A', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ position: 'fixed', inset: 0, background: overlayBg, zIndex: 700, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+        <div style={{ width: '100%', maxWidth: 480, background: panelBg, borderRadius: '20px 20px 0 0', border: `1px solid ${panelBorder}`, maxHeight: '92vh', overflowY: 'auto' }}>
           <EditForm
             event={event}
             onSaved={(updated) => {
@@ -269,16 +286,16 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 700, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, background: overlayBg, zIndex: 700, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
-      <div style={{ width: '100%', maxWidth: 480, background: '#0F0F0F', borderRadius: '20px 20px 0 0', border: '1px solid #1A1A1A', maxHeight: '92vh', overflowY: 'auto', animation: 'slideUp 0.3s ease' }}>
+      <div style={{ width: '100%', maxWidth: 480, background: panelBg, borderRadius: '20px 20px 0 0', border: `1px solid ${panelBorder}`, maxHeight: '92vh', overflowY: 'auto', animation: 'slideUp 0.3s ease' }}>
 
         {/* Hero image or color band */}
         {event.photo_url ? (
           <div style={{ position: 'relative', height: 200 }}>
             <img src={event.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={event.title} />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, #0F0F0F 0%, transparent 60%)' }} />
-            <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', fontSize: 22, width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to top, ${isLight ? '#FFFFFF' : '#0F0F0F'} 0%, transparent 60%)` }} />
+            <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: closeBg, border: 'none', color: closeColor, fontSize: 22, width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
           </div>
         ) : (
           <div style={{ height: 8, background: color, borderRadius: '20px 20px 0 0' }} />
@@ -297,16 +314,16 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
 
           <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, letterSpacing: 1.5, marginTop: 10, marginBottom: 4, lineHeight: 1.1 }}>{event.title}</h2>
 
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#888', marginBottom: 6 }}>
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: muted, marginBottom: 6 }}>
             📍 {event.address || `${event.location} · ${event.city}`}
           </div>
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#888', marginBottom: 6 }}>
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: muted, marginBottom: 6 }}>
             <span style={{ color }}> 📅 {event.date}</span>
             {event.time && <span> · ⏰ {event.time}</span>}
           </div>
           {event.host && (
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#666', marginBottom: 10 }}>
-              🎤 Hosted by <span style={{ color: '#aaa' }}>{event.host}</span>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: muted2, marginBottom: 10 }}>
+              🎤 Hosted by <span style={{ color: isLight ? '#888' : '#aaa' }}>{event.host}</span>
             </div>
           )}
 
@@ -319,7 +336,7 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
           )}
 
           {event.description && (
-            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: '#888', lineHeight: 1.6, marginBottom: 16 }}>
+            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: commentsText, lineHeight: 1.6, marginBottom: 16 }}>
               {event.description}
             </p>
           )}
@@ -331,7 +348,7 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
                 {attending ? `✓ YOU'RE GOING · ${attendeeCount}` : `I'M IN · ${attendeeCount} GOING`}
               </button>
             )}
-            <button onClick={handleShare} style={{ flex: 1, background: '#141414', color: copied ? '#7CFF6B' : '#888', border: '1px solid #222', borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}>
+            <button onClick={handleShare} style={{ flex: 1, background: shareBg, color: copied ? '#7CFF6B' : shareText, border: `1px solid ${shareBorder}`, borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}>
               {copied ? '✓ COPIED!' : '🔗 SHARE'}
             </button>
           </div>
@@ -364,7 +381,7 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
         </div>
 
         {/* Divider */}
-        <div style={{ height: 1, background: '#1A1A1A' }} />
+          <div style={{ height: 1, background: dividerBg }} />
 
         {/* Comments */}
         <div style={{ padding: '16px 20px 24px' }}>
@@ -372,14 +389,14 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
             COMMENTS {comments.length > 0 && <span style={{ color }}>{comments.length}</span>}
           </div>
 
-          {comments.length === 0 && (
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#333', textAlign: 'center', padding: '20px 0' }}>
+              {comments.length === 0 && (
+                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: isLight ? '#666' : '#333', textAlign: 'center', padding: '20px 0' }}>
               No comments yet. Be the first! 👇
             </div>
           )}
 
           {comments.map(c => (
-            <div key={c.id} style={{ marginBottom: 14 }}>
+                  <div key={c.id} style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <div style={{ width: 28, height: 28, borderRadius: '50%', background: color + '33', border: `1px solid ${color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, color }}>
                   {(c.profiles?.username || 'U')[0].toUpperCase()}
@@ -387,21 +404,21 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
                 <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600, color: '#aaa' }}>{c.profiles?.username || 'Anonymous'}</span>
                 <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#333' }}>{new Date(c.created_at).toLocaleDateString()}</span>
               </div>
-              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#888', paddingLeft: 36, lineHeight: 1.5 }}>{c.text}</div>
+                    <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: commentsText, paddingLeft: 36, lineHeight: 1.5 }}>{c.text}</div>
             </div>
           ))}
           <div ref={bottomRef} />
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <input
+              <input
               placeholder={user ? 'Add a comment...' : 'Log in to comment'}
               value={commentText}
               onChange={e => setCommentText(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleComment()}
               disabled={!user}
-              style={{ flex: 1, background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '10px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                style={{ flex: 1, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '10px 13px', color: isLight ? '#222' : '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
             />
-            <button onClick={user ? handleComment : onAuthNeeded} disabled={posting} style={{ background: color, color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '0 16px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, cursor: 'pointer', letterSpacing: 1 }}>
+              <button onClick={user ? handleComment : onAuthNeeded} disabled={posting} style={{ background: color, color: isLight ? '#0A0A0A' : '#0A0A0A', border: 'none', borderRadius: 8, padding: '0 16px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, cursor: 'pointer', letterSpacing: 1 }}>
               {posting ? '...' : 'POST'}
             </button>
           </div>

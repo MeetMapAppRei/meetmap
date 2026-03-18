@@ -1,8 +1,11 @@
+import { useTheme } from '../lib/ThemeContext'
+
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
 
 export default function EventCard({ event, onClick }) {
+  const { isLight } = useTheme()
   const color = TYPE_COLORS[event.type] || '#FF6B35'
   const today = new Date().toISOString().split('T')[0]
   const isToday = event.date === today
@@ -13,8 +16,10 @@ export default function EventCard({ event, onClick }) {
     <div
       onClick={onClick}
       style={{
-        background: event.featured ? 'linear-gradient(135deg, #141414, #111)' : '#111',
-        border: `1px solid ${event.featured ? '#2A1A0A' : '#1A1A1A'}`,
+        background: event.featured
+          ? (isLight ? 'linear-gradient(135deg, #FFFFFF, #F6F6F6)' : 'linear-gradient(135deg, #141414, #111)')
+          : (isLight ? '#FFFFFF' : '#111'),
+        border: `1px solid ${event.featured ? (isLight ? '#FFE9DD' : '#2A1A0A') : (isLight ? '#E5E5E5' : '#1A1A1A')}`,
         borderLeft: `3px solid ${color}`,
         borderRadius: 12,
         marginBottom: 10,
@@ -65,14 +70,14 @@ export default function EventCard({ event, onClick }) {
 
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 21, letterSpacing: 1, marginBottom: 4, lineHeight: 1.1 }}>{event.title}</div>
 
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#666', marginBottom: 4 }}>
+        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#555' : '#666', marginBottom: 4 }}>
           📍 {event.address || `${event.location} · ${event.city}`}
         </div>
 
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#888', marginBottom: event.tags?.length ? 8 : 0 }}>
-          <span style={{ color }}> 📅 {event.date}</span>
+        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#777' : '#888', marginBottom: event.tags?.length ? 8 : 0 }}>
+          <span style={{ color: color }}> 📅 {event.date}</span>
           {event.time && <span> · {event.time}</span>}
-          {event.host && <span style={{ color: '#555' }}> · {event.host}</span>}
+          {event.host && <span style={{ color: isLight ? '#666' : '#555' }}> · {event.host}</span>}
         </div>
 
         {event.tags?.length > 0 && (
@@ -84,10 +89,10 @@ export default function EventCard({ event, onClick }) {
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555' }}>
-            👥 <span style={{ color: '#777' }}>{attendeeCount} going</span>
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#666' : '#555' }}>
+            👥 <span style={{ color: isLight ? '#777' : '#777' }}>{attendeeCount} going</span>
           </div>
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#444' }}>
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#444' : '#444' }}>
             Tap to view →
           </div>
         </div>

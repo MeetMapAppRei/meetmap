@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { fetchEvents, signOut } from './lib/supabase'
+import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
 import EventDetail from './components/EventDetail'
@@ -9,6 +10,7 @@ import MapView from './components/MapView'
 
 function AppInner() {
   const { user, loading: authLoading } = useAuth()
+  const { theme, toggleTheme, isLight } = useTheme()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -115,7 +117,9 @@ function AppInner() {
   return (
     <div style={{
       fontFamily: "'Bebas Neue', 'Impact', sans-serif",
-      background: '#0A0A0A', minHeight: '100vh', color: '#F0F0F0',
+      background: isLight ? '#F6F6F6' : '#0A0A0A',
+      minHeight: '100vh',
+      color: isLight ? '#111111' : '#F0F0F0',
       maxWidth: 480, margin: '0 auto', position: 'relative',
     }}>
       <style>{`
@@ -133,7 +137,8 @@ function AppInner() {
 
       {/* ── HEADER ── */}
       <div style={{
-        background: '#0A0A0A', borderBottom: '1px solid #171717',
+        background: isLight ? '#F6F6F6' : '#0A0A0A',
+        borderBottom: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
         padding: '14px 18px 10px', position: 'sticky', top: 0, zIndex: 100,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -171,6 +176,22 @@ function AppInner() {
               </button>
             )}
             <button
+              onClick={toggleTheme}
+              style={{
+                background: 'none',
+                border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+                borderRadius: 8,
+                padding: '7px 12px',
+                color: isLight ? '#444' : '#555',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+            >
+              {isLight ? 'LIGHT' : 'DARK'}
+            </button>
+            <button
               onClick={() => user ? setShowPost(true) : setShowAuth(true)}
               style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '8px 14px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1.5, cursor: 'pointer' }}
             >
@@ -186,7 +207,7 @@ function AppInner() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search events, city, tags..."
-            style={{ width: '100%', background: '#111', border: '1px solid #1A1A1A', borderRadius: 8, padding: '9px 12px 9px 33px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 13 }}
+            style={{ width: '100%', background: isLight ? '#FFFFFF' : '#111', border: `1px solid ${isLight ? '#E5E5E5' : '#1A1A1A'}`, borderRadius: 8, padding: '9px 12px 9px 33px', color: isLight ? '#222' : '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 13 }}
           />
         </div>
 
@@ -196,9 +217,9 @@ function AppInner() {
           <button
             onClick={() => setFilterType('all')}
             style={{
-              flexShrink: 0, background: filterType === 'all' ? '#FF6B35' : '#111',
+              flexShrink: 0, background: filterType === 'all' ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
               color: filterType === 'all' ? '#0A0A0A' : '#666',
-              border: '1px solid', borderColor: filterType === 'all' ? '#FF6B35' : '#1A1A1A',
+              border: '1px solid', borderColor: filterType === 'all' ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -214,9 +235,9 @@ function AppInner() {
               else requestNearMe()
             }}
             style={{
-              flexShrink: 0, background: nearMeOnly ? '#333' : '#111',
+              flexShrink: 0, background: nearMeOnly ? '#333' : isLight ? '#F2F2F2' : '#111',
               color: nearMeOnly ? '#aaa' : '#444',
-              border: '1px solid', borderColor: nearMeOnly ? '#FF6B35' : '#1A1A1A',
+              border: '1px solid', borderColor: nearMeOnly ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -233,9 +254,9 @@ function AppInner() {
               key={type}
               onClick={() => setFilterType(type)}
               style={{
-                flexShrink: 0, background: filterType === type ? '#FF6B35' : '#111',
+                flexShrink: 0, background: filterType === type ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
                 color: filterType === type ? '#0A0A0A' : '#666',
-                border: '1px solid', borderColor: filterType === type ? '#FF6B35' : '#1A1A1A',
+                border: '1px solid', borderColor: filterType === type ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
                 borderRadius: 20, padding: '5px 13px',
                 fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
                 cursor: 'pointer', textTransform: 'capitalize',
@@ -249,9 +270,9 @@ function AppInner() {
           <button
             onClick={() => setShowPast(p => !p)}
             style={{
-              flexShrink: 0, background: showPast ? '#333' : '#111',
+              flexShrink: 0, background: showPast ? '#333' : isLight ? '#F2F2F2' : '#111',
               color: showPast ? '#aaa' : '#444',
-              border: '1px solid', borderColor: showPast ? '#444' : '#1A1A1A',
+              border: '1px solid', borderColor: showPast ? '#444' : isLight ? '#E5E5E5' : '#1A1A1A',
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -324,8 +345,8 @@ function AppInner() {
       {/* ── BOTTOM NAV ── */}
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 480, background: '#0A0A0A',
-        borderTop: '1px solid #171717', display: 'flex',
+        width: '100%', maxWidth: 480, background: isLight ? '#F6F6F6' : '#0A0A0A',
+        borderTop: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`, display: 'flex',
         justifyContent: 'space-around', padding: '10px 0 20px', zIndex: 200,
       }}>
         {[{ id: 'list', icon: '☰', label: 'LIST' }, { id: 'map', icon: '🗺', label: 'MAP' }].map(nav => (
@@ -365,8 +386,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppInner />
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
