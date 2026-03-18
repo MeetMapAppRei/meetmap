@@ -21,6 +21,11 @@ function AppInner() {
   const [mapSelected, setMapSelected] = useState(null)
   const [showPast, setShowPast] = useState(false)
 
+  const RADIUS_MILES = 25
+  const [nearMeOnly, setNearMeOnly] = useState(false)
+  const [nearMeCoords, setNearMeCoords] = useState(null)
+  const [nearMeError, setNearMeError] = useState('')
+
   const loadEvents = useCallback(async () => {
     setLoading(true)
     try {
@@ -63,7 +68,42 @@ function AppInner() {
     setShowAuth(true)
   }
 
-  const upcomingCount = events.filter(e => e.date >= new Date().toISOString().split('T')[0]).length
+  const toRad = (deg) => (deg * Math.PI) / 180
+  const distanceMiles = (lat1, lon1, lat2, lon2) => {
+    const R = 3958.8 // Earth radius in miles
+    const dLat = toRad(lat2 - lat1)
+    const dLon = toRad(lon2 - lon1)
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  const eventsForDisplay = nearMeOnly && nearMeCoords
+    ? events
+      .filter(e => Number.isFinite(e.lat) && Number.isFinite(e.lng) && distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES)
+      .sort((a, b) => (
+        distanceMiles(nearMeCoords.lat, nearMeCoords.lng, a.lat, a.lng) -
+        distanceMiles(nearMeCoords.lat, nearMeCoords.lng, b.lat, b.lng)
+      ))
+    : events
+
+  const upcomingCount = eventsForDisplay.filter(e => e.date >= new Date().toISOString().split('T')[0]).length
+
+  const requestNearMe = () => {
+    setNearMeError('')
+    if (!navigator.geolocation) {
+      setNearMeError('Geolocation not supported')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setNearMeCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setNearMeOnly(true)
+      },
+      err => setNearMeError(err.message || 'Could not get location'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5 * 60 * 1000 }
+    )
+  }
 
   return (
     <div style={{
@@ -174,15 +214,41 @@ function AppInner() {
           >
             {showPast ? '✓ Past Events' : 'Past Events'}
           </button>
+
+          <button
+            onClick={() => {
+              if (nearMeOnly) setNearMeOnly(false)
+              else requestNearMe()
+            }}
+            style={{
+              flexShrink: 0, background: nearMeOnly ? '#333' : '#111',
+              color: nearMeOnly ? '#aaa' : '#444',
+              border: '1px solid', borderColor: nearMeOnly ? '#FF6B35' : '#1A1A1A',
+              borderRadius: 20, padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
+            {nearMeOnly ? `✓ Near Me` : `Near Me`}
+          </button>
         </div>
+
+        {nearMeError && nearMeOnly && (
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#FF9944', marginTop: 6 }}>
+            {nearMeError}
+          </div>
+        )}
       </div>
 
       {/* ── MAP VIEW ── */}
       {view === 'map' && (
         <div className="fade-up">
           <MapView
-            events={events}
+            events={eventsForDisplay}
             onSelectEvent={e => { setMapSelected(e); setSelectedEvent(e) }}
+            centerOn={nearMeOnly ? nearMeCoords : null}
           />
         </div>
       )}
@@ -202,7 +268,7 @@ function AppInner() {
               <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555', marginBottom: 20 }}>Could not load events. Check your connection and try again.</div>
               <button onClick={() => { setLoadError(false); loadEvents() }} style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '10px 24px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}>RETRY</button>
             </div>
-          ) : events.length === 0 ? (
+          ) : eventsForDisplay.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#333' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🚗</div>
               <div style={{ fontSize: 22, letterSpacing: 1, marginBottom: 6 }}>NO EVENTS YET</div>
@@ -210,16 +276,16 @@ function AppInner() {
             </div>
           ) : (
             <>
-              {!searchQuery && filterType === 'all' && events.some(e => e.featured) && (
+              {!searchQuery && filterType === 'all' && eventsForDisplay.some(e => e.featured) && (
                 <div style={{ marginBottom: 4 }}>
                   <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#FF6B35', letterSpacing: 2, marginBottom: 8 }}>⭐ FEATURED</div>
-                  {events.filter(e => e.featured).map(e => (
+                  {eventsForDisplay.filter(e => e.featured).map(e => (
                     <EventCard key={e.id} event={e} onClick={() => setSelectedEvent(e)} />
                   ))}
                   <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#444', letterSpacing: 2, marginBottom: 8, marginTop: 14 }}>ALL EVENTS</div>
                 </div>
               )}
-              {events
+              {eventsForDisplay
                 .filter(e => (searchQuery || filterType !== 'all') ? true : !e.featured)
                 .map(e => (
                   <EventCard key={e.id} event={e} onClick={() => setSelectedEvent(e)} />

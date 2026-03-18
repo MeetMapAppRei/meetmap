@@ -7,7 +7,7 @@ const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
 
-export default function MapView({ events, onSelectEvent }) {
+export default function MapView({ events, onSelectEvent, centerOn }) {
   const mapContainer = useRef(null)
   const map = useRef(null)
   const markersRef = useRef([])
@@ -42,14 +42,19 @@ export default function MapView({ events, onSelectEvent }) {
       // Add navigation controls
       map.current.addControl(new window.mapboxgl.NavigationControl(), 'bottom-right')
 
-      // Try to center on user location
-      navigator.geolocation?.getCurrentPosition(pos => {
-        map.current?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 10 })
-      })
+      // Default map center; we only fly to the user when the parent requests it.
     }
     script.onerror = () => setMapboxError(true)
     document.head.appendChild(script)
   }, [])
+
+  // Fly to a provided center (ex: "Near Me").
+  // We only run this after the map is loaded.
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !window.mapboxgl) return
+    if (!centerOn?.lat || !centerOn?.lng) return
+    map.current.flyTo({ center: [centerOn.lng, centerOn.lat], zoom: 11, speed: 1.2 })
+  }, [mapLoaded, centerOn])
 
   // Add markers when events or map change
   useEffect(() => {
