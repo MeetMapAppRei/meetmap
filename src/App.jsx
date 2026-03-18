@@ -185,36 +185,22 @@ function AppInner() {
 
         {/* Filter chips + past toggle */}
         <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2, alignItems: 'center' }}>
-          {['all', 'meet', 'car show', 'track day', 'cruise'].map(type => (
-            <button
-              key={type}
-              onClick={() => setFilterType(type)}
-              style={{
-                flexShrink: 0, background: filterType === type ? '#FF6B35' : '#111',
-                color: filterType === type ? '#0A0A0A' : '#666',
-                border: '1px solid', borderColor: filterType === type ? '#FF6B35' : '#1A1A1A',
-                borderRadius: 20, padding: '5px 13px',
-                fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
-                cursor: 'pointer', textTransform: 'capitalize',
-              }}
-            >
-              {type === 'all' ? 'All Events' : type}
-            </button>
-          ))}
+          {/* All Events */}
           <button
-            onClick={() => setShowPast(p => !p)}
+            onClick={() => setFilterType('all')}
             style={{
-              flexShrink: 0, background: showPast ? '#333' : '#111',
-              color: showPast ? '#aaa' : '#444',
-              border: '1px solid', borderColor: showPast ? '#444' : '#1A1A1A',
+              flexShrink: 0, background: filterType === 'all' ? '#FF6B35' : '#111',
+              color: filterType === 'all' ? '#0A0A0A' : '#666',
+              border: '1px solid', borderColor: filterType === 'all' ? '#FF6B35' : '#1A1A1A',
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
             }}
           >
-            {showPast ? '✓ Past Events' : 'Past Events'}
+            All Events
           </button>
 
+          {/* Near Me (next to All Events) */}
           <button
             onClick={() => {
               if (nearMeOnly) setNearMeOnly(false)
@@ -232,6 +218,39 @@ function AppInner() {
             }}
           >
             {nearMeOnly ? `✓ Near Me` : `Near Me`}
+          </button>
+
+          {/* Other type filters */}
+          {['meet', 'car show', 'track day', 'cruise'].map(type => (
+            <button
+              key={type}
+              onClick={() => setFilterType(type)}
+              style={{
+                flexShrink: 0, background: filterType === type ? '#FF6B35' : '#111',
+                color: filterType === type ? '#0A0A0A' : '#666',
+                border: '1px solid', borderColor: filterType === type ? '#FF6B35' : '#1A1A1A',
+                borderRadius: 20, padding: '5px 13px',
+                fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+                cursor: 'pointer', textTransform: 'capitalize',
+              }}
+            >
+              {type}
+            </button>
+          ))}
+
+          {/* Past events toggle */}
+          <button
+            onClick={() => setShowPast(p => !p)}
+            style={{
+              flexShrink: 0, background: showPast ? '#333' : '#111',
+              color: showPast ? '#aaa' : '#444',
+              border: '1px solid', borderColor: showPast ? '#444' : '#1A1A1A',
+              borderRadius: 20, padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {showPast ? '✓ Past Events' : 'Past Events'}
           </button>
         </div>
 
