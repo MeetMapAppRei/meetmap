@@ -169,7 +169,7 @@ function EditForm({ event, onSaved, onCancel }) {
   )
 }
 
-export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded, onDeleted }) {
+export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded, onDeleted, onUpdated }) {
   const { user } = useAuth()
   const [event, setEvent] = useState(initialEvent)
   const [comments, setComments] = useState([])
@@ -256,7 +256,11 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
         <div style={{ width: '100%', maxWidth: 480, background: '#0F0F0F', borderRadius: '20px 20px 0 0', border: '1px solid #1A1A1A', maxHeight: '92vh', overflowY: 'auto' }}>
           <EditForm
             event={event}
-            onSaved={(updated) => { setEvent(updated); setEditing(false) }}
+            onSaved={(updated) => {
+              setEvent(updated)
+              setEditing(false)
+              onUpdated?.(updated)
+            }}
             onCancel={() => setEditing(false)}
           />
         </div>
@@ -294,7 +298,7 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
           <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, letterSpacing: 1.5, marginTop: 10, marginBottom: 4, lineHeight: 1.1 }}>{event.title}</h2>
 
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#888', marginBottom: 6 }}>
-            📍 {event.location} · {event.city}
+            📍 {event.address || `${event.location} · ${event.city}`}
           </div>
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#888', marginBottom: 6 }}>
             <span style={{ color }}> 📅 {event.date}</span>

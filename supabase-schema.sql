@@ -38,6 +38,9 @@ create table public.events (
   time text,
   location text not null,
   city text not null,
+  -- Full street address used for display + geocoding/map pinning.
+  -- Example: "123 Main St, Riverside, CA 92501"
+  address text,
   lat double precision,
   lng double precision,
   description text,
@@ -52,6 +55,9 @@ create policy "Events are viewable by everyone" on public.events for select usin
 create policy "Authenticated users can create events" on public.events for insert with check (auth.uid() = user_id);
 create policy "Users can update own events" on public.events for update using (auth.uid() = user_id);
 create policy "Users can delete own events" on public.events for delete using (auth.uid() = user_id);
+
+-- If you're updating an existing project, you can re-run this line safely:
+alter table public.events add column if not exists address text;
 
 -- 3. ATTENDEES
 create table public.event_attendees (

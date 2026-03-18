@@ -52,6 +52,12 @@ function AppInner() {
     setEvents(prev => [newEvent, ...prev])
   }
 
+  const handleUpdated = (updatedEvent) => {
+    if (!updatedEvent) return
+    setEvents(prev => prev.map(e => (e.id === updatedEvent.id ? updatedEvent : e)))
+    setSelectedEvent(updatedEvent)
+  }
+
   const handleAuthNeeded = () => {
     setSelectedEvent(null)
     setShowAuth(true)
@@ -254,6 +260,7 @@ function AppInner() {
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
           onAuthNeeded={handleAuthNeeded}
+          onUpdated={handleUpdated}
           onDeleted={(id) => {
             setEvents(prev => prev.filter(e => e.id !== id))
             setSelectedEvent(null)

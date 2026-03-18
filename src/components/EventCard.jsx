@@ -60,7 +60,7 @@ export default function EventCard({ event, onClick }) {
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 21, letterSpacing: 1, marginBottom: 4, lineHeight: 1.1 }}>{event.title}</div>
 
         <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#666', marginBottom: 4 }}>
-          📍 {event.city}
+          📍 {event.address || `${event.location} · ${event.city}`}
         </div>
 
         <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#888', marginBottom: event.tags?.length ? 8 : 0 }}>

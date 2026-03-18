@@ -149,7 +149,7 @@ export default function PostEventForm({ onClose, onPosted }) {
       const tagsArray = form.tags.split(',').map(t => t.trim()).filter(Boolean)
       const eventPayload = {
         title: form.title, type: form.type, date: form.date, time: form.time,
-        location: form.location, city: form.city, description: form.description,
+        location: form.location, city: form.city, address: form.address, description: form.description,
         tags: tagsArray, host: form.host,
         lat: finalCoords?.lat || null, lng: finalCoords?.lng || null,
         user_id: user.id,
