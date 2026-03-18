@@ -35,7 +35,13 @@ export default function EventCard({ event, onClick }) {
       {/* Photo strip */}
       {event.photo_url && (
         <div style={{ height: 120, overflow: 'hidden' }}>
-          <img src={event.photo_url} alt={event.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img
+            src={event.photo_url}
+            alt={event.title}
+            loading="lazy"
+            decoding="async"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
         </div>
       )}
 

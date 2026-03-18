@@ -15,6 +15,7 @@ function AppInner() {
   const [view, setView] = useState('list')
   const [filterType, setFilterType] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [showAuth, setShowAuth] = useState(false)
   const [showPost, setShowPost] = useState(false)
@@ -26,10 +27,16 @@ function AppInner() {
   const [nearMeCoords, setNearMeCoords] = useState(null)
   const [nearMeError, setNearMeError] = useState('')
 
+  // Prevent triggering Supabase queries on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchQuery(searchQuery), 400)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
   const loadEvents = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchEvents({ type: filterType, search: searchQuery, showPast })
+      const data = await fetchEvents({ type: filterType, search: debouncedSearchQuery, showPast })
       setEvents(data || [])
     } catch (e) {
       console.error('Failed to load events:', e)
@@ -37,7 +44,7 @@ function AppInner() {
     } finally {
       setLoading(false)
     }
-  }, [filterType, searchQuery, showPast])
+  }, [filterType, debouncedSearchQuery, showPast])
 
   useEffect(() => {
     loadEvents()
@@ -295,7 +302,7 @@ function AppInner() {
             </div>
           ) : (
             <>
-              {!searchQuery && filterType === 'all' && eventsForDisplay.some(e => e.featured) && (
+              {!debouncedSearchQuery && filterType === 'all' && eventsForDisplay.some(e => e.featured) && (
                 <div style={{ marginBottom: 4 }}>
                   <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#FF6B35', letterSpacing: 2, marginBottom: 8 }}>⭐ FEATURED</div>
                   {eventsForDisplay.filter(e => e.featured).map(e => (
@@ -305,7 +312,7 @@ function AppInner() {
                 </div>
               )}
               {eventsForDisplay
-                .filter(e => (searchQuery || filterType !== 'all') ? true : !e.featured)
+                .filter(e => (debouncedSearchQuery || filterType !== 'all') ? true : !e.featured)
                 .map(e => (
                   <EventCard key={e.id} event={e} onClick={() => setSelectedEvent(e)} />
                 ))}
