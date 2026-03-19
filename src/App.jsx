@@ -17,6 +17,10 @@ const parseCsvEnv = (value) =>
 
 const IMPORT_ADMIN_EMAILS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_EMAILS).map(v => v.toLowerCase())
 const IMPORT_ADMIN_USER_IDS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_USER_IDS)
+const REMINDER_WINDOWS = [
+  { id: '24h', leadMs: 24 * 60 * 60 * 1000, windowMs: 60 * 60 * 1000 },
+  { id: '2h', leadMs: 2 * 60 * 60 * 1000, windowMs: 20 * 60 * 1000 },
+]
 
 const isImportAdminUser = (user) => {
   if (!user) return false
@@ -24,6 +28,15 @@ const isImportAdminUser = (user) => {
   return IMPORT_ADMIN_EMAILS.includes(email) || IMPORT_ADMIN_USER_IDS.includes(user.id)
 }
 const getSavedEventsStorageKey = (user) => `meetmap:saved-events:${user?.id || 'anon'}`
+const getReminderLogStorageKey = (user) => `meetmap:sent-reminders:${user?.id || 'anon'}`
+
+const eventStartMs = (event) => {
+  if (!event?.date) return null
+  const timePart = event.time && /^\d{2}:\d{2}/.test(event.time) ? event.time : '00:00'
+  const dt = new Date(`${event.date}T${timePart}`)
+  const ms = dt.getTime()
+  return Number.isFinite(ms) ? ms : null
+}
 
 function AppInner() {
   const { user, loading: authLoading } = useAuth()
@@ -44,6 +57,9 @@ function AppInner() {
   const [showSavedOnly, setShowSavedOnly] = useState(false)
   const [savedEventIds, setSavedEventIds] = useState([])
   const [savedSyncAvailable, setSavedSyncAvailable] = useState(true)
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported'
+  )
 
   const [showImportQueue, setShowImportQueue] = useState(false)
   const [imports, setImports] = useState([])
@@ -156,6 +172,11 @@ function AppInner() {
     } catch {}
   }, [user, savedEventIds])
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    setNotificationPermission(window.Notification.permission)
+  }, [])
+
   const toRad = (deg) => (deg * Math.PI) / 180
   const distanceMiles = (lat1, lon1, lat2, lon2) => {
     const R = 3958.8 // Earth radius in miles
@@ -193,6 +214,16 @@ function AppInner() {
     }
   }
 
+  const handleEnableNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    try {
+      const permission = await window.Notification.requestPermission()
+      setNotificationPermission(permission)
+    } catch (e) {
+      console.error('Notification permission request failed:', e)
+    }
+  }
+
   const baseEvents = showSavedOnly
     ? events.filter(e => savedEventIds.includes(e.id))
     : events
@@ -207,6 +238,57 @@ function AppInner() {
     : baseEvents
 
   const upcomingCount = eventsForDisplay.filter(e => e.date >= new Date().toISOString().split('T')[0]).length
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (notificationPermission !== 'granted') return
+    if (!savedEventIds.length || !events.length) return
+
+    const reminderLogKey = getReminderLogStorageKey(user)
+    let reminderLog = {}
+    try {
+      reminderLog = JSON.parse(window.localStorage.getItem(reminderLogKey) || '{}') || {}
+    } catch {
+      reminderLog = {}
+    }
+
+    const now = Date.now()
+    let changed = false
+    const savedSet = new Set(savedEventIds)
+    const candidateEvents = events.filter(e => savedSet.has(e.id))
+
+    for (const event of candidateEvents) {
+      const startMs = eventStartMs(event)
+      if (!startMs || startMs <= now) continue
+      const eventLog = reminderLog[event.id] || {}
+
+      for (const w of REMINDER_WINDOWS) {
+        if (eventLog[w.id]) continue
+        const reminderMs = startMs - w.leadMs
+        if (now >= reminderMs && now <= reminderMs + w.windowMs) {
+          try {
+            const when = new Date(startMs).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+            const place = event.address || `${event.location || ''}${event.city ? `, ${event.city}` : ''}`.trim()
+            new window.Notification(`Upcoming saved event: ${event.title}`, {
+              body: `${when}${place ? ` • ${place}` : ''}`,
+              icon: '/og-image.svg',
+            })
+            eventLog[w.id] = true
+            reminderLog[event.id] = eventLog
+            changed = true
+          } catch (e) {
+            console.error('Failed to send reminder notification:', e)
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      try {
+        window.localStorage.setItem(reminderLogKey, JSON.stringify(reminderLog))
+      } catch {}
+    }
+  }, [notificationPermission, savedEventIds, events, user])
 
   const requestNearMe = () => {
     setNearMeError('')
@@ -578,6 +660,23 @@ function AppInner() {
               }}
             >
               {isLight ? 'LIGHT' : 'DARK'}
+            </button>
+            <button
+              onClick={handleEnableNotifications}
+              style={{
+                background: 'none',
+                border: `1px solid ${notificationPermission === 'granted' ? '#FF6B35' : (isLight ? '#E5E5E5' : '#222')}`,
+                borderRadius: 8,
+                padding: '7px 9px',
+                color: notificationPermission === 'granted' ? '#FF8A5C' : (isLight ? '#444' : '#555'),
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+              title="Enable reminders for saved events"
+            >
+              {notificationPermission === 'granted' ? 'Alerts On' : 'Alerts'}
             </button>
             {canAccessImports && (
               <button
