@@ -152,6 +152,21 @@ export const uploadEventPhoto = async (file, eventId) => {
   return data.publicUrl
 }
 
+export const uploadFlyerImportImage = async (file, userId) => {
+  if (!file) throw new Error('Missing file')
+  if (!userId) throw new Error('Missing userId')
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+  const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg'
+  const path = `flyer-imports/${userId}/${Date.now()}.${safeExt}`
+  const { error } = await supabase.storage.from('event-photos').upload(path, file, {
+    upsert: false,
+    contentType: file.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`,
+  })
+  if (error) throw error
+  const { data } = supabase.storage.from('event-photos').getPublicUrl(path)
+  return data.publicUrl
+}
+
 // ═══ ATTENDEES ═══════════════════════════════════════════════
 
 export const toggleAttendance = async (eventId, userId) => {

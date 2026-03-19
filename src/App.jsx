@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut } from './lib/supabase'
+import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage } from './lib/supabase'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
@@ -289,10 +289,12 @@ function AppInner() {
         return
       }
 
+      const storedImageUrl = await uploadFlyerImportImage(file, user.id)
+
       await createFlyerImport({
         userId: user.id,
         sourceUrl: importParams.sourceUrl,
-        imageUrl: importParams.imageUrl || '',
+        imageUrl: storedImageUrl,
         extracted: json.extracted,
       })
 
