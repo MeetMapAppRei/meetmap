@@ -21,6 +21,15 @@ const PROMPT = `Extract car meet event info from this flyer. Return ONLY a JSON 
 }
 If a field is not found, use empty string. For date, convert to YYYY-MM-DD format using the current year ${new Date().getFullYear()} if no year is specified on the flyer. For time use 24hr format.`
 
+function guessMediaTypeFromUrl(url) {
+  const u = String(url || '').toLowerCase()
+  if (u.includes('.png')) return 'image/png'
+  if (u.includes('.webp')) return 'image/webp'
+  if (u.includes('.gif')) return 'image/gif'
+  // Default to jpeg since most IG CDN flyers are jpg.
+  return 'image/jpeg'
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -132,32 +141,39 @@ export default async function handler(req, res) {
       }
     }
 
-    if (!imgRes || !imgRes.ok) {
-      const contentType = lastRes?.headers?.get('content-type') || ''
-      let snippet = null
+    // Prefer base64 (we already fetched the image), but when Instagram blocks
+    // the server-side fetch (403/429) we fall back to passing the URL
+    // directly to Claude. This avoids depending entirely on our fetch headers.
+    let imageBlock = { type: 'image', source: { type: 'url', url: imageUrl } }
+
+    if (imgRes && imgRes.ok) {
+      const arrayBuffer = await imgRes.arrayBuffer()
+      const base64 = Buffer.from(arrayBuffer).toString('base64')
+
+      const contentTypeRaw = imgRes.headers.get('content-type') || 'image/jpeg'
+      const contentType = contentTypeRaw.split(';')[0].trim()
+      const mediaType = contentType.startsWith('image/') ? contentType : 'image/jpeg'
+
+      imageBlock = {
+        type: 'image',
+        source: { type: 'base64', media_type: mediaType, data: base64 },
+      }
+    } else {
+      // Keep last error details for debugging, but don't block extraction.
       try {
-        // If Instagram returns HTML for blocks/throttling, surface a tiny snippet.
+        const contentType = lastRes?.headers?.get('content-type') || ''
+        let snippet = null
         if (contentType.includes('text') || contentType.includes('json') || contentType.includes('html')) {
-          snippet = lastRes ? (await lastRes.text()).slice(0, 300) : null
+          snippet = lastRes ? (await lastRes.text()).slice(0, 120) : null
+        }
+        res.locals._imageFetchFailure = {
+          status: lastRes?.status,
+          contentType,
+          snippet,
+          tried: uniqueCandidates.slice(0, 6),
         }
       } catch {}
-
-      return res.status(500).json({
-        error: 'Could not fetch image',
-        status: lastRes?.status,
-        contentType,
-        snippet,
-        // Helpful for debugging: show what URL variant ultimately failed.
-        tried: uniqueCandidates.slice(0, 6),
-      })
     }
-
-    const arrayBuffer = await imgRes.arrayBuffer()
-    const base64 = Buffer.from(arrayBuffer).toString('base64')
-
-    const contentTypeRaw = imgRes.headers.get('content-type') || 'image/jpeg'
-    const contentType = contentTypeRaw.split(';')[0].trim()
-    const mediaType = contentType.startsWith('image/') ? contentType : 'image/jpeg'
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -173,10 +189,7 @@ export default async function handler(req, res) {
           {
             role: 'user',
             content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: mediaType, data: base64 },
-              },
+              imageBlock,
               { type: 'text', text: PROMPT },
             ],
           },
