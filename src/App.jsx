@@ -32,6 +32,7 @@ function AppInner() {
   const [importProcessing, setImportProcessing] = useState(false)
   const [importParams, setImportParams] = useState(null) // { sourceUrl, imageUrl }
   const [importError, setImportError] = useState(null)
+  const [importUploading, setImportUploading] = useState(false)
 
   const RADIUS_MILES = 25
   const [nearMeOnly, setNearMeOnly] = useState(false)
@@ -241,6 +242,69 @@ function AppInner() {
       cancelled = true
     }
   }, [importParams, user, showImportQueue, loadPendingImports])
+
+  const handleUploadFlyer = async (file) => {
+    if (!file || !importParams?.sourceUrl) return
+    setImportUploading(true)
+    setImportError(null)
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader()
+        r.onerror = () => reject(new Error('Failed to read file'))
+        r.onload = () => resolve(String(r.result || ''))
+        r.readAsDataURL(file)
+      })
+
+      const m = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/)
+      if (!m) throw new Error('Unsupported image file')
+      const mediaType = m[1]
+      const imageBase64 = m[2]
+
+      const resp = await fetch('/api/extract-flyer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceUrl: importParams.sourceUrl,
+          imageUrl: importParams.imageUrl || '',
+          imageBase64,
+          mediaType,
+        }),
+      })
+      const json = await resp.json()
+      if (!resp.ok) {
+        const msg =
+          typeof json.error === 'string'
+            ? json.error
+            : json.error
+              ? JSON.stringify(json.error)
+              : 'Extraction failed'
+        const status = json.status ? ` (status ${json.status})` : ''
+        throw new Error(msg + status)
+      }
+      if (!json?.extracted) throw new Error('No extracted data returned')
+
+      if (!user) {
+        setImportError('Log in to create this flyer import.')
+        setShowAuth(true)
+        return
+      }
+
+      await createFlyerImport({
+        userId: user.id,
+        sourceUrl: importParams.sourceUrl,
+        imageUrl: importParams.imageUrl || '',
+        extracted: json.extracted,
+      })
+
+      setImportParams(null)
+      window.history.replaceState({}, '', window.location.pathname)
+      await loadPendingImports()
+    } catch (e) {
+      setImportError(e?.message || 'Upload failed')
+    } finally {
+      setImportUploading(false)
+    }
+  }
 
   const handleApproveImport = async (imp) => {
     if (!user || !imp) return
@@ -615,6 +679,9 @@ function AppInner() {
           onUpdateImport={handleUpdateImport}
           requiresAuth={!user}
           errorMessage={importError}
+          showUpload={!!importParams && !!importError && (String(importError).includes('robots.txt') || String(importError).includes('Could not fetch image'))}
+          uploading={importUploading}
+          onPickUpload={handleUploadFlyer}
           onClose={() => setShowImportQueue(false)}
         />
       )}

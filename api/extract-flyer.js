@@ -39,11 +39,59 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { imageUrl, sourceUrl } = req.body || {}
-    if (!imageUrl) return res.status(400).json({ error: 'Missing imageUrl' })
+    const { imageUrl, sourceUrl, imageBase64, mediaType: mediaTypeInput } = req.body || {}
+    if (!imageUrl && !imageBase64) return res.status(400).json({ error: 'Missing imageUrl or imageBase64' })
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
+
+    // If the client already uploaded the image bytes, use that directly.
+    if (imageBase64) {
+      const mt = typeof mediaTypeInput === 'string' && mediaTypeInput.startsWith('image/')
+        ? mediaTypeInput
+        : guessMediaTypeFromUrl(imageUrl)
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: { type: 'base64', media_type: mt || 'image/jpeg', data: String(imageBase64) },
+                },
+                { type: 'text', text: PROMPT },
+              ],
+            },
+          ],
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        console.error('Anthropic error:', data)
+        const err =
+          data?.error?.message ||
+          data?.message ||
+          (typeof data?.error === 'string' ? data.error : null) ||
+          JSON.stringify(data)
+        return res.status(response.status).json({ error: err, status: response.status })
+      }
+
+      const text = data.content?.[0]?.text || ''
+      const clean = text.replace(/```json|```/g, '').trim()
+      const extracted = JSON.parse(clean)
+      return res.status(200).json({ extracted })
+    }
 
     // Fetch the flyer image server-side to avoid CORS issues in the browser.
     // Instagram CDN frequently requires a reasonable UA + Referer/Origin.
