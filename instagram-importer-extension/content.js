@@ -12,8 +12,23 @@ function looksLikeProfileImage(url) {
 
 function upgradeInstagramImage(url) {
   if (!url) return url
-  // Many IG CDN URLs include /s640x640/ or /s320x320/ etc. Try bumping size.
-  return String(url).replace(/\/s\d+x\d+\//, '/s1080x1080/')
+  let u = String(url)
+
+  // Many IG CDN URLs use the `stp=` query param to force a square crop,
+  // which cuts off flyer edges (e.g. `..._dst-jpg_e35_s640x640...`).
+  // Best-effort: remove `stp` so the CDN can return the original/uncropped asset.
+  try {
+    const parsed = new URL(u)
+    const stp = parsed.searchParams.get('stp')
+    if (stp && /e35_s\d+x\d+/i.test(stp)) {
+      parsed.searchParams.delete('stp')
+      u = parsed.toString()
+      return u
+    }
+  } catch {}
+
+  // Fallback: URLs sometimes include /s640x640/ style segments.
+  return u.replace(/\/s\d+x\d+\//, '/s1080x1080/')
 }
 
 function parseInstagramDims(url) {
