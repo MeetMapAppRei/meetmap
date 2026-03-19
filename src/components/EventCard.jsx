@@ -1,5 +1,6 @@
 import { useTheme } from '../lib/ThemeContext'
 import { getEventQuality } from '../lib/eventQuality'
+import { formatEventTime } from '../lib/formatEventTime'
 
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
@@ -134,7 +135,7 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
 
         <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#777' : '#888', marginBottom: event.tags?.length ? 8 : 0 }}>
           <span style={{ color: color }}> 📅 {event.date}</span>
-          {event.time && <span> · {event.time}</span>}
+          {event.time && <span> · {formatEventTime(event.time)}</span>}
           {event.host && <span style={{ color: isLight ? '#666' : '#555' }}> · {event.host}</span>}
         </div>
         {event.latest_update_message && (

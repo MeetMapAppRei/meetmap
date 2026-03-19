@@ -3,6 +3,7 @@ import { fetchComments, postComment, getEventRsvpStatus, setEventRsvp, updateEve
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { getEventQuality } from '../lib/eventQuality'
+import { formatEventTime } from '../lib/formatEventTime'
 import ReportEventModal from './ReportEventModal'
 
 const TYPE_COLORS = {
@@ -414,7 +415,7 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
           </div>
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: muted, marginBottom: 6 }}>
             <span style={{ color }}> 📅 {event.date}</span>
-            {event.time && <span> · ⏰ {event.time}</span>}
+            {event.time && <span> · ⏰ {formatEventTime(event.time)}</span>}
           </div>
           {event.host && (
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: muted2, marginBottom: 10 }}>
