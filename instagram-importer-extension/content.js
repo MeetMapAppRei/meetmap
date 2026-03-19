@@ -25,7 +25,12 @@ function ensureButton() {
 
   // Only show on likely post pages.
   const p = window.location.pathname
-  const looksLikePost = p.startsWith('/p/') || p.startsWith('/reel/') || p.startsWith('/tv/')
+  // Instagram uses multiple patterns: /p/... (posts), /reels/... (reels), /tv/... (videos)
+  const looksLikePost =
+    p.startsWith('/p/') ||
+    p.startsWith('/reels/') ||
+    p.startsWith('/reel/') ||
+    p.startsWith('/tv/')
   if (!looksLikePost) return
 
   const btn = document.createElement('button')
@@ -61,7 +66,9 @@ function ensureButton() {
       `&sourceUrl=${encodeURIComponent(sourceUrl)}` +
       `&imageUrl=${encodeURIComponent(imageUrl)}`
 
-    chrome.tabs.create({ url })
+    // Ask the background service worker to open the tab.
+    // Content scripts sometimes don't have `chrome.tabs` available.
+    chrome.runtime.sendMessage({ type: 'OPEN_MEETMAP_IMPORT', url })
   })
 
   document.body.appendChild(btn)

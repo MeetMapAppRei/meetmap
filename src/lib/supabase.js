@@ -118,6 +118,17 @@ export const updateFlyerImportStatus = async (importId, status) => {
   return data
 }
 
+export const updateFlyerImport = async (importId, updates) => {
+  const { data, error } = await supabase
+    .from('flyer_imports')
+    .update(updates)
+    .eq('id', importId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
 export const uploadEventPhoto = async (file, eventId) => {
   const ext = file.name.split('.').pop()
   const path = `events/${eventId}/${Date.now()}.${ext}`

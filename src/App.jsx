@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, signOut } from './lib/supabase'
+import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut } from './lib/supabase'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
@@ -261,6 +261,44 @@ function AppInner() {
     } catch (e) {
       console.error('Reject failed:', e)
     }
+  }
+
+  const handleUpdateImport = async (importId, nextDraft) => {
+    if (!user || !importId || !nextDraft) return
+    const tags = (nextDraft.tagsText || '')
+      .split(',')
+      .map(t => t.trim())
+      .filter(Boolean)
+
+    const tagsText = (nextDraft.tagsText || '').trim()
+
+    const updates = {
+      title: nextDraft.title?.trim() || null,
+      type: nextDraft.type?.trim() || null,
+      date: nextDraft.date?.trim() || null,
+      time: nextDraft.time?.trim() || null,
+      location: nextDraft.location?.trim() || null,
+      city: nextDraft.city?.trim() || null,
+      address: nextDraft.address?.trim() || null,
+      host: nextDraft.host?.trim() || null,
+      description: nextDraft.description?.trim() || null,
+      tags,
+      extracted: {
+        title: nextDraft.title || '',
+        type: nextDraft.type || '',
+        date: nextDraft.date || '',
+        time: nextDraft.time || '',
+        location: nextDraft.location || '',
+        address: nextDraft.address || '',
+        city: nextDraft.city || '',
+        host: nextDraft.host || '',
+        description: nextDraft.description || '',
+        tags: tagsText,
+      },
+    }
+
+    await updateFlyerImport(importId, updates)
+    await loadPendingImports()
   }
 
   return (
@@ -542,6 +580,7 @@ function AppInner() {
           approvingId={approvingImportId}
           onApprove={handleApproveImport}
           onReject={handleRejectImport}
+          onUpdateImport={handleUpdateImport}
           onClose={() => setShowImportQueue(false)}
         />
       )}

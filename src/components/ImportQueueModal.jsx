@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTheme } from '../lib/ThemeContext'
 
 const TYPE_LABELS = {
@@ -19,9 +19,13 @@ export default function ImportQueueModal({
   approvingId,
   onApprove,
   onReject,
+  onUpdateImport,
   onClose,
 }) {
   const { isLight } = useTheme()
+
+  const [editingId, setEditingId] = useState(null)
+  const [draft, setDraft] = useState(null)
 
   const overlayBg = isLight ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.92)'
   const panelBg = isLight ? '#FFFFFF' : '#0F0F0F'
@@ -32,6 +36,25 @@ export default function ImportQueueModal({
   const closeColor = isLight ? '#666' : '#fff'
 
   const pendingCount = useMemo(() => (imports || []).length, [imports])
+
+  const inputBg = isLight ? '#FFFFFF' : '#141414'
+  const inputBorder = isLight ? '#E5E5E5' : '#222'
+  const inputText = isLight ? '#111111' : '#F0F0F0'
+  const labelText = isLight ? '#666' : '#888'
+  const textAreaBg = inputBg
+
+  const makeDraft = (i) => ({
+    title: i.title || '',
+    type: i.type || 'meet',
+    date: i.date || '',
+    time: i.time || '',
+    location: i.location || '',
+    city: i.city || '',
+    address: i.address || '',
+    host: i.host || '',
+    description: i.description || '',
+    tagsText: Array.isArray(i.tags) ? i.tags.join(', ') : (i.tags || ''),
+  })
 
   return (
     <div
@@ -93,6 +116,7 @@ export default function ImportQueueModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {imports.map(i => {
                 const ready = requiredOk(i)
+                const isEditing = editingId === i.id
                 return (
                   <div
                     key={i.id}
@@ -142,6 +166,19 @@ export default function ImportQueueModal({
 
                       <div style={{ marginTop: 10, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         <button
+                          onClick={() => {
+                            setEditingId(i.id)
+                            setDraft(makeDraft(i))
+                          }}
+                          style={{ background: 'transparent', border: `1px solid ${btnBorder}`, color: textMuted, borderRadius: 10, padding: '10px 14px', cursor: 'pointer', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, opacity: approvingId === i.id ? 0.6 : 1 }}
+                          disabled={approvingId === i.id}
+                        >
+                          REVIEW/EDIT
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: 10, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        <button
                           onClick={() => onReject?.(i)}
                           style={{ background: 'transparent', border: `1px solid ${btnBorder}`, color: textMuted, borderRadius: 10, padding: '10px 14px', cursor: 'pointer', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16 }}
                           disabled={approvingId === i.id}
@@ -171,6 +208,141 @@ export default function ImportQueueModal({
                       {!ready && (
                         <div style={{ marginTop: 8, fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: isLight ? '#A33' : '#FF6060' }}>
                           Approve is blocked until `title`, `type`, `date`, `location`, and `city` are present.
+                        </div>
+                      )}
+
+                      {isEditing && draft && (
+                        <div style={{ marginTop: 12, borderTop: `1px solid ${btnBorder}`, paddingTop: 12 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            <div>
+                              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Title *</div>
+                              <input
+                                value={draft.title}
+                                onChange={e => setDraft(p => ({ ...p, title: e.target.value }))}
+                                style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                              />
+                            </div>
+                            <div>
+                              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Type *</div>
+                              <select
+                                value={draft.type}
+                                onChange={e => setDraft(p => ({ ...p, type: e.target.value }))}
+                                style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                              >
+                                <option value="meet">Meet</option>
+                                <option value="car show">Car Show</option>
+                                <option value="track day">Track Day</option>
+                                <option value="cruise">Cruise</option>
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Date *</div>
+                              <input
+                                type="date"
+                                value={draft.date}
+                                onChange={e => setDraft(p => ({ ...p, date: e.target.value }))}
+                                style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                              />
+                            </div>
+                            <div>
+                              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Time</div>
+                              <input
+                                type="time"
+                                value={draft.time || ''}
+                                onChange={e => setDraft(p => ({ ...p, time: e.target.value }))}
+                                style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            <div>
+                              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Location *</div>
+                              <input
+                                value={draft.location}
+                                onChange={e => setDraft(p => ({ ...p, location: e.target.value }))}
+                                style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                              />
+                            </div>
+                            <div>
+                              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>City *</div>
+                              <input
+                                value={draft.city}
+                                onChange={e => setDraft(p => ({ ...p, city: e.target.value }))}
+                                style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Street Address (optional)</div>
+                            <input
+                              value={draft.address}
+                              onChange={e => setDraft(p => ({ ...p, address: e.target.value }))}
+                              style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                            />
+                          </div>
+
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Host</div>
+                            <input
+                              value={draft.host}
+                              onChange={e => setDraft(p => ({ ...p, host: e.target.value }))}
+                              style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                            />
+                          </div>
+
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Tags (comma separated)</div>
+                            <input
+                              value={draft.tagsText}
+                              onChange={e => setDraft(p => ({ ...p, tagsText: e.target.value }))}
+                              style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+                            />
+                          </div>
+
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 800, color: labelText, marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.6 }}>Description</div>
+                            <textarea
+                              value={draft.description}
+                              onChange={e => setDraft(p => ({ ...p, description: e.target.value }))}
+                              rows={3}
+                              style={{ width: '100%', background: textAreaBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '9px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none', resize: 'none' }}
+                            />
+                          </div>
+
+                          <div style={{ marginTop: 12, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                            <button
+                              onClick={() => {
+                                setEditingId(null)
+                                setDraft(null)
+                              }}
+                              style={{ background: 'transparent', border: `1px solid ${btnBorder}`, color: textMuted, borderRadius: 10, padding: '10px 14px', cursor: 'pointer', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16 }}
+                            >
+                              CANCEL
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await onUpdateImport?.(i.id, draft)
+                                setEditingId(null)
+                                setDraft(null)
+                              }}
+                              disabled={approvingId === i.id}
+                              style={{
+                                background: '#FF6B35',
+                                border: 'none',
+                                color: '#0A0A0A',
+                                borderRadius: 10,
+                                padding: '10px 16px',
+                                cursor: approvingId === i.id ? 'default' : 'pointer',
+                                fontFamily: "'Bebas Neue', sans-serif",
+                                fontSize: 16,
+                                letterSpacing: 1,
+                              }}
+                            >
+                              SAVE
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
