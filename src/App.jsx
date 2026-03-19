@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents, fetchEventStatuses, fetchLatestEventUpdates } from './lib/supabase'
+import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents, fetchEventStatuses, fetchLatestEventUpdates, fetchEventReports, resolveEventReport } from './lib/supabase'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
@@ -8,6 +8,7 @@ import EventDetail from './components/EventDetail'
 import EventCard from './components/EventCard'
 import MapView from './components/MapView'
 import ImportQueueModal from './components/ImportQueueModal'
+import ModerationQueueModal from './components/ModerationQueueModal'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -70,6 +71,10 @@ function AppInner() {
   const [showImportQueue, setShowImportQueue] = useState(false)
   const [imports, setImports] = useState([])
   const [importsLoading, setImportsLoading] = useState(false)
+  const [showModerationQueue, setShowModerationQueue] = useState(false)
+  const [moderationReports, setModerationReports] = useState([])
+  const [moderationLoading, setModerationLoading] = useState(false)
+  const [moderationResolvingReportId, setModerationResolvingReportId] = useState(null)
   const [approvingImportId, setApprovingImportId] = useState(null)
   const [importProcessing, setImportProcessing] = useState(false)
   const [importParams, setImportParams] = useState(null) // { sourceUrl, imageUrl }
@@ -457,11 +462,43 @@ function AppInner() {
     }
   }, [user, canAccessImports])
 
+  const loadPendingModerationReports = useCallback(async () => {
+    if (!user || !canAccessImports) return
+    setModerationLoading(true)
+    try {
+      const data = await fetchEventReports('pending')
+      setModerationReports(data || [])
+    } catch (e) {
+      console.error('Failed to load moderation queue:', e)
+    } finally {
+      setModerationLoading(false)
+    }
+  }, [user, canAccessImports])
+
+  const handleModerateReport = async (reportId, nextStatus) => {
+    if (!user) return
+    setModerationResolvingReportId(reportId)
+    try {
+      await resolveEventReport(reportId, user.id, nextStatus)
+      setModerationReports(prev => prev.filter(r => r.id !== reportId))
+    } catch (e) {
+      console.error('Moderation update failed:', e)
+    } finally {
+      setModerationResolvingReportId(null)
+    }
+  }
+
   useEffect(() => {
     if (!showImportQueue) return
     if (!user) return
     loadPendingImports()
   }, [showImportQueue, user, loadPendingImports])
+
+  useEffect(() => {
+    if (!showModerationQueue) return
+    if (!user) return
+    loadPendingModerationReports()
+  }, [showModerationQueue, user, loadPendingModerationReports])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -836,6 +873,26 @@ function AppInner() {
                 Imports
               </button>
             )}
+            {canAccessImports && (
+              <button
+                onClick={() => setShowModerationQueue(true)}
+                style={{
+                  background: 'none',
+                  border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+                  borderRadius: 8,
+                  padding: '7px 9px',
+                  color: isLight ? '#444' : '#555',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Moderation
+              </button>
+            )}
             <button
               onClick={() => user ? setShowPost(true) : setShowAuth(true)}
               style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '8px 10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 1.2, cursor: 'pointer' }}
@@ -1066,6 +1123,16 @@ function AppInner() {
           uploading={importUploading}
           onPickUpload={handleUploadFlyer}
           onClose={() => setShowImportQueue(false)}
+        />
+      )}
+      {showModerationQueue && canAccessImports && (
+        <ModerationQueueModal
+          reports={moderationReports}
+          loading={moderationLoading}
+          resolvingReportId={moderationResolvingReportId}
+          onResolve={(reportId, status) => handleModerateReport(reportId, status || 'resolved')}
+          onIgnore={(reportId, status) => handleModerateReport(reportId, status || 'ignored')}
+          onClose={() => setShowModerationQueue(false)}
         />
       )}
       {selectedEvent && (

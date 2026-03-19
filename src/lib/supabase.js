@@ -493,3 +493,55 @@ export const upsertSavedEvents = async (userId, eventIds) => {
     .upsert(rows, { onConflict: 'user_id,event_id', ignoreDuplicates: true })
   if (error) throw error
 }
+
+// ═══ EVENT REPORTS (moderation queue) ═══════════════════════
+export const createEventReport = async (eventId, reporterUserId, reason, details) => {
+  const safeReason = String(reason || '').trim()
+  const safeDetails = details == null ? '' : String(details || '').trim()
+  if (!eventId || !reporterUserId) throw new Error('Missing report data')
+  if (!safeReason) throw new Error('Missing report reason')
+
+  const { data, error } = await supabase
+    .from('event_reports')
+    .insert([{ event_id: eventId, reporter_user_id: reporterUserId, reason: safeReason, details: safeDetails || null }])
+    .select('id, event_id, reason, details, status, created_at')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export const fetchEventReports = async (status = 'pending') => {
+  try {
+    const { data, error } = await supabase
+      .from('event_reports')
+      .select('id, event_id, reason, details, status, created_at, review_note, reviewed_at, reporter_user_id, profiles(username, avatar_url), events(title, type, date, location, city, photo_url)')
+      .eq('status', status)
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    return data || []
+  } catch {
+    return []
+  }
+}
+
+export const resolveEventReport = async (reportId, reviewerUserId, status, reviewNote) => {
+  if (!reportId || !reviewerUserId) throw new Error('Missing resolve data')
+  const safeStatus = status === 'ignored' ? 'ignored' : 'resolved'
+  const safeNote = reviewNote == null ? '' : String(reviewNote || '').trim()
+
+  const { data, error } = await supabase
+    .from('event_reports')
+    .update({
+      status: safeStatus,
+      review_note: safeNote || null,
+      reviewed_by: reviewerUserId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', reportId)
+    .select('id, status, reviewed_at')
+    .single()
+
+  if (error) throw error
+  return data
+}

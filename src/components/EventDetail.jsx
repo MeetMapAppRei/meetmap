@@ -3,6 +3,7 @@ import { fetchComments, postComment, getEventRsvpStatus, setEventRsvp, updateEve
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { getEventQuality } from '../lib/eventQuality'
+import ReportEventModal from './ReportEventModal'
 
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
@@ -213,6 +214,7 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   const [editing, setEditing] = useState(false)
   const [updateMessage, setUpdateMessage] = useState('')
   const [updateError, setUpdateError] = useState('')
+  const [showReport, setShowReport] = useState(false)
   const bottomRef = useRef()
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
@@ -440,6 +442,32 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
             </div>
           )}
 
+          {/* Report button */}
+          {!isOwner && (
+            <div style={{ marginBottom: 10 }}>
+              <button
+                onClick={() => {
+                  if (!user) return onAuthNeeded()
+                  setShowReport(true)
+                }}
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: `1px solid ${shareBorder}`,
+                  borderRadius: 10,
+                  padding: '12px 12px',
+                  fontFamily: "'Bebas Neue'",
+                  fontSize: 16,
+                  letterSpacing: 1.2,
+                  cursor: 'pointer',
+                  color: isLight ? '#444' : '#aaa',
+                }}
+              >
+                🚩 REPORT EVENT
+              </button>
+            </div>
+          )}
+
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
             {!isPast && (
@@ -584,6 +612,14 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
           </div>
         </div>
       </div>
+      {showReport && (
+        <ReportEventModal
+          event={event}
+          user={user}
+          onAuthNeeded={onAuthNeeded}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   )
 }
