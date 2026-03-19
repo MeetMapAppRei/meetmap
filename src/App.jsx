@@ -236,10 +236,14 @@ function AppInner() {
   const eventsForDisplay = nearMeOnly && nearMeCoords
     ? statusFilteredEvents
       .filter(e => Number.isFinite(e.lat) && Number.isFinite(e.lng) && distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES)
-      .sort((a, b) => (
-        distanceMiles(nearMeCoords.lat, nearMeCoords.lng, a.lat, a.lng) -
-        distanceMiles(nearMeCoords.lat, nearMeCoords.lng, b.lat, b.lng)
-      ))
+      .sort((a, b) => {
+        const aStart = eventStartMs(a) ?? Number.POSITIVE_INFINITY
+        const bStart = eventStartMs(b) ?? Number.POSITIVE_INFINITY
+        if (aStart !== bStart) return aStart - bStart
+        // Tie-breaker: keep closer events first when start time matches.
+        return distanceMiles(nearMeCoords.lat, nearMeCoords.lng, a.lat, a.lng) -
+          distanceMiles(nearMeCoords.lat, nearMeCoords.lng, b.lat, b.lng)
+      })
     : statusFilteredEvents
 
   const upcomingCount = eventsForDisplay.filter(e => e.date >= new Date().toISOString().split('T')[0]).length
