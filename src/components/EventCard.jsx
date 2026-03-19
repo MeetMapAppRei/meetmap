@@ -3,6 +3,10 @@ import { useTheme } from '../lib/ThemeContext'
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
+const getDirectionsUrl = (event) => {
+  const query = (event?.address || `${event?.location || ''}, ${event?.city || ''}`).trim()
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
 
 export default function EventCard({ event, onClick, saved = false, onToggleSaved }) {
   const { isLight } = useTheme()
@@ -11,6 +15,7 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
   const isToday = event.date === today
   const isPast = event.date < today
   const attendeeCount = event.event_attendees?.[0]?.count || event.attendee_count || 0
+  const directionsUrl = getDirectionsUrl(event)
 
   return (
     <div
@@ -113,8 +118,27 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#666' : '#555' }}>
             👥 <span style={{ color: isLight ? '#777' : '#777' }}>{attendeeCount} going</span>
           </div>
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#444' : '#444' }}>
-            Tap to view →
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <a
+              href={directionsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                color: isLight ? '#D1491A' : '#FF8A5C',
+                border: `1px solid ${isLight ? '#F0C3B3' : '#3A241C'}`,
+                borderRadius: 999,
+                padding: '3px 8px',
+                textDecoration: 'none',
+              }}
+            >
+              Directions
+            </a>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#444' : '#444' }}>
+              Tap to view →
+            </div>
           </div>
         </div>
       </div>

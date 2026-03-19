@@ -6,6 +6,10 @@ import { useTheme } from '../lib/ThemeContext'
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
+const getDirectionsUrl = (event) => {
+  const query = (event?.address || `${event?.location || ''}, ${event?.city || ''}`).trim()
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
 
 const S = {
   label: { fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#555', letterSpacing: 1, display: 'block', marginBottom: 5, textTransform: 'uppercase' },
@@ -186,6 +190,7 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   const bottomRef = useRef()
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
+  const directionsUrl = getDirectionsUrl(event)
   const isOwner = user && event.user_id === user.id
 
   useEffect(() => {
@@ -367,6 +372,26 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
             <button onClick={handleShare} style={{ flex: 1, background: shareBg, color: copied ? '#7CFF6B' : shareText, border: `1px solid ${shareBorder}`, borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}>
               {copied ? '✓ COPIED!' : '🔗 SHARE'}
             </button>
+            <a
+              href={directionsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                flex: 1,
+                background: shareBg,
+                color: isLight ? '#D1491A' : '#FF8A5C',
+                border: `1px solid ${shareBorder}`,
+                borderRadius: 10,
+                padding: '12px',
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 16,
+                letterSpacing: 1,
+                textDecoration: 'none',
+                textAlign: 'center',
+              }}
+            >
+              📍 DIRECTIONS
+            </a>
           </div>
 
           {/* Owner controls: Edit + Delete */}
