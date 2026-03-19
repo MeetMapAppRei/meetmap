@@ -54,6 +54,7 @@ function AppInner() {
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
   const [showPast, setShowPast] = useState(false)
+  const [showCanceled, setShowCanceled] = useState(false)
   const [showSavedOnly, setShowSavedOnly] = useState(false)
   const [savedEventIds, setSavedEventIds] = useState([])
   const [savedSyncAvailable, setSavedSyncAvailable] = useState(true)
@@ -228,14 +229,18 @@ function AppInner() {
     ? events.filter(e => savedEventIds.includes(e.id))
     : events
 
-  const eventsForDisplay = nearMeOnly && nearMeCoords
+  const statusFilteredEvents = showCanceled
     ? baseEvents
+    : baseEvents.filter(e => String(e.status || 'active').toLowerCase() !== 'canceled')
+
+  const eventsForDisplay = nearMeOnly && nearMeCoords
+    ? statusFilteredEvents
       .filter(e => Number.isFinite(e.lat) && Number.isFinite(e.lng) && distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES)
       .sort((a, b) => (
         distanceMiles(nearMeCoords.lat, nearMeCoords.lng, a.lat, a.lng) -
         distanceMiles(nearMeCoords.lat, nearMeCoords.lng, b.lat, b.lng)
       ))
-    : baseEvents
+    : statusFilteredEvents
 
   const upcomingCount = eventsForDisplay.filter(e => e.date >= new Date().toISOString().split('T')[0]).length
 
@@ -799,6 +804,19 @@ function AppInner() {
             }}
           >
             {showSavedOnly ? `★ Saved (${savedEventIds.length})` : 'Saved'}
+          </button>
+          <button
+            onClick={() => setShowCanceled(p => !p)}
+            style={{
+              background: showCanceled ? '#2A1010' : isLight ? '#F2F2F2' : '#111',
+              color: showCanceled ? '#FF7A7A' : '#444',
+              border: '1px solid', borderColor: showCanceled ? '#FF6060' : isLight ? '#E5E5E5' : '#1A1A1A',
+              borderRadius: 20, padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {showCanceled ? '✓ Show Canceled' : 'Show Canceled'}
           </button>
         </div>
 

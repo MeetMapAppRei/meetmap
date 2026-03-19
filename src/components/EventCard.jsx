@@ -3,6 +3,11 @@ import { useTheme } from '../lib/ThemeContext'
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
+const STATUS_META = {
+  moved: { label: 'Moved', fg: '#00D4FF', bg: '#00D4FF22' },
+  delayed: { label: 'Delayed', fg: '#FFD700', bg: '#FFD70022' },
+  canceled: { label: 'Canceled', fg: '#FF6060', bg: '#FF353522' },
+}
 const getDirectionsUrl = (event) => {
   const query = (event?.address || `${event?.location || ''}, ${event?.city || ''}`).trim()
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
@@ -16,6 +21,7 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
   const isPast = event.date < today
   const attendeeCount = event.event_attendees?.[0]?.count || event.attendee_count || 0
   const directionsUrl = getDirectionsUrl(event)
+  const statusMeta = STATUS_META[String(event.status || 'active').toLowerCase()]
 
   return (
     <div
@@ -70,6 +76,11 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
             {event.featured && (
               <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: '#FFD70022', color: '#FFD700', padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5 }}>
                 ⭐ FEATURED
+              </span>
+            )}
+            {statusMeta && (
+              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: statusMeta.bg, color: statusMeta.fg, padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                {statusMeta.label}
               </span>
             )}
           </div>

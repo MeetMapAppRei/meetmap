@@ -6,6 +6,12 @@ import { useTheme } from '../lib/ThemeContext'
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
+const STATUS_META = {
+  active: { label: 'Active', fg: '#7CFF6B', bg: '#7CFF6B22' },
+  moved: { label: 'Moved', fg: '#00D4FF', bg: '#00D4FF22' },
+  delayed: { label: 'Delayed', fg: '#FFD700', bg: '#FFD70022' },
+  canceled: { label: 'Canceled', fg: '#FF6060', bg: '#FF353522' },
+}
 const getDirectionsUrl = (event) => {
   const query = (event?.address || `${event?.location || ''}, ${event?.city || ''}`).trim()
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
@@ -37,6 +43,8 @@ function EditForm({ event, onSaved, onCancel }) {
     description: event.description || '',
     tags: (event.tags || []).join(', '),
     host: event.host || '',
+    status: event.status || 'active',
+    status_note: event.status_note || '',
   })
   const [photo, setPhoto] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(event.photo_url || null)
@@ -81,6 +89,8 @@ function EditForm({ event, onSaved, onCancel }) {
         description: form.description,
         tags: tagsArray,
         host: form.host,
+        status: form.status,
+        status_note: form.status_note,
         lat: finalCoords?.lat || null,
         lng: finalCoords?.lng || null,
       }
@@ -154,6 +164,14 @@ function EditForm({ event, onSaved, onCancel }) {
       <label style={S.label}>Tags (comma separated)</label>
       <input style={S.input} value={form.tags} onChange={e => set('tags', e.target.value)} placeholder="JDM, Stance, All Welcome" />
 
+      <label style={S.label}>Event Status</label>
+      <select style={S.select} value={form.status} onChange={e => set('status', e.target.value)}>
+        <option value="active">Active</option>
+        <option value="moved">Moved</option>
+        <option value="delayed">Delayed</option>
+        <option value="canceled">Canceled</option>
+      </select>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div><label style={S.label}>Date *</label><input style={S.input} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
         <div><label style={S.label}>Time</label><input style={S.input} type="time" value={form.time} onChange={e => set('time', e.target.value)} /></div>
@@ -161,6 +179,9 @@ function EditForm({ event, onSaved, onCancel }) {
 
       <label style={S.label}>Details</label>
       <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} placeholder="What's the vibe?" style={{ ...S.input, resize: 'none', marginBottom: 20 }} />
+
+      <label style={S.label}>Status Note</label>
+      <input style={S.input} value={form.status_note} onChange={e => set('status_note', e.target.value)} placeholder="Optional: New address or timing update" />
 
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={onCancel} style={{ flex: 1, background: 'transparent', color: '#666', border: '1px solid #222', borderRadius: 10, padding: 14, fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, cursor: 'pointer' }}>
@@ -190,6 +211,10 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   const bottomRef = useRef()
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
+  const statusKey = ['active', 'moved', 'delayed', 'canceled'].includes(String(event.status || '').toLowerCase())
+    ? String(event.status).toLowerCase()
+    : 'active'
+  const statusMeta = STATUS_META[statusKey]
   const directionsUrl = getDirectionsUrl(event)
   const isOwner = user && event.user_id === user.id
 
@@ -315,8 +340,18 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
           <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 700, background: color + '22', color, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize', letterSpacing: 0.5 }}>
             {event.type}
           </span>
+          {statusKey !== 'active' && (
+            <span style={{ marginLeft: 8, fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 700, color: statusMeta.fg, background: statusMeta.bg, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              {statusMeta.label}
+            </span>
+          )}
 
           <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 30, letterSpacing: 1.5, marginTop: 10, marginBottom: 4, lineHeight: 1.1 }}>{event.title}</h2>
+          {statusKey !== 'active' && (
+            <div style={{ marginBottom: 10, border: `1px solid ${statusMeta.fg}66`, background: statusMeta.bg, color: statusMeta.fg, borderRadius: 8, padding: '8px 10px', fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600 }}>
+              {statusMeta.label}{event.status_note ? `: ${event.status_note}` : ''}
+            </div>
+          )}
 
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: muted, marginBottom: 6 }}>
             📍 {event.address || `${event.location} · ${event.city}`}

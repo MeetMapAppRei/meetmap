@@ -21,6 +21,41 @@ export const signOut = () => supabase.auth.signOut()
 
 export const getUser = () => supabase.auth.getUser()
 
+const normalizeStatus = (value) => {
+  const v = String(value || '').toLowerCase()
+  return ['active', 'moved', 'delayed', 'canceled'].includes(v) ? v : 'active'
+}
+
+const fetchEventStatusMap = async (eventIds) => {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
+  const { data, error } = await supabase
+    .from('event_statuses')
+    .select('event_id, status, status_note')
+    .in('event_id', eventIds)
+  if (error) throw error
+  const map = {}
+  for (const row of data || []) {
+    map[row.event_id] = {
+      status: normalizeStatus(row.status),
+      status_note: row.status_note || '',
+    }
+  }
+  return map
+}
+
+const upsertEventStatus = async (eventId, status = 'active', statusNote = '') => {
+  if (!eventId) return
+  const { error } = await supabase
+    .from('event_statuses')
+    .upsert([{
+      event_id: eventId,
+      status: normalizeStatus(status),
+      status_note: statusNote || null,
+      updated_at: new Date().toISOString(),
+    }], { onConflict: 'event_id' })
+  if (error) throw error
+}
+
 // ═══ EVENTS ══════════════════════════════════════════════════
 
 export const fetchEvents = async (filters = {}) => {
@@ -48,7 +83,17 @@ export const fetchEvents = async (filters = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data
+  const rows = data || []
+  try {
+    const statusMap = await fetchEventStatusMap(rows.map(e => e.id))
+    return rows.map(e => ({
+      ...e,
+      status: statusMap[e.id]?.status || 'active',
+      status_note: statusMap[e.id]?.status_note || '',
+    }))
+  } catch {
+    return rows.map(e => ({ ...e, status: 'active', status_note: '' }))
+  }
 }
 
 export const createEvent = async (eventData, userId) => {
@@ -58,18 +103,40 @@ export const createEvent = async (eventData, userId) => {
     .select('id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)')
     .single()
   if (error) throw error
-  return data
+  const status = normalizeStatus(eventData?.status)
+  const statusNote = eventData?.status_note || ''
+  try {
+    await upsertEventStatus(data.id, status, statusNote)
+  } catch {}
+  return { ...data, status, status_note: statusNote }
 }
 
 export const updateEvent = async (eventId, updates) => {
+  const { status, status_note, ...eventUpdates } = updates || {}
   const { data, error } = await supabase
     .from('events')
-    .update(updates)
+    .update(eventUpdates)
     .eq('id', eventId)
     .select('id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)')
     .single()
   if (error) throw error
-  return data
+  let finalStatus = normalizeStatus(status)
+  let finalStatusNote = status_note || ''
+  if (status !== undefined || status_note !== undefined) {
+    try {
+      await upsertEventStatus(eventId, finalStatus, finalStatusNote)
+    } catch {}
+  } else {
+    try {
+      const statusMap = await fetchEventStatusMap([eventId])
+      finalStatus = statusMap[eventId]?.status || 'active'
+      finalStatusNote = statusMap[eventId]?.status_note || ''
+    } catch {
+      finalStatus = 'active'
+      finalStatusNote = ''
+    }
+  }
+  return { ...data, status: finalStatus, status_note: finalStatusNote }
 }
 
 // ═══ FLYER IMPORTS (approval queue) ═══════════════════════
