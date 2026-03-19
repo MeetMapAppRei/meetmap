@@ -197,7 +197,12 @@ function AppInner() {
         })
         const json = await resp.json()
         if (!resp.ok) {
-          const msg = json.error || 'Extraction failed'
+          const msg =
+            typeof json.error === 'string'
+              ? json.error
+              : json.error
+                ? JSON.stringify(json.error)
+                : 'Extraction failed'
           const status = json.status ? ` (status ${json.status})` : ''
           throw new Error(msg + status)
         }

@@ -141,38 +141,69 @@ export default async function handler(req, res) {
       }
     }
 
-    // Prefer base64 (we already fetched the image), but when Instagram blocks
-    // the server-side fetch (403/429) we fall back to passing the URL
-    // directly to Claude. This avoids depending entirely on our fetch headers.
-    let imageBlock = { type: 'image', source: { type: 'url', url: imageUrl } }
+    // Claude expects base64 image data. If Instagram blocks our fetch (403),
+    // route through an image proxy to retrieve the bytes.
+    let base64 = null
+    let mediaType = null
 
     if (imgRes && imgRes.ok) {
       const arrayBuffer = await imgRes.arrayBuffer()
-      const base64 = Buffer.from(arrayBuffer).toString('base64')
+      base64 = Buffer.from(arrayBuffer).toString('base64')
 
       const contentTypeRaw = imgRes.headers.get('content-type') || 'image/jpeg'
       const contentType = contentTypeRaw.split(';')[0].trim()
-      const mediaType = contentType.startsWith('image/') ? contentType : 'image/jpeg'
-
-      imageBlock = {
-        type: 'image',
-        source: { type: 'base64', media_type: mediaType, data: base64 },
-      }
+      mediaType = contentType.startsWith('image/') ? contentType : 'image/jpeg'
     } else {
-      // Keep last error details for debugging, but don't block extraction.
-      try {
+      let proxyRes = null
+      for (const candidateUrl of uniqueCandidates.slice(0, 6)) {
+        const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(candidateUrl)}`
+        try {
+          proxyRes = await fetch(proxyUrl, {
+            headers: {
+              'User-Agent': commonHeaders['User-Agent'],
+              Accept: commonHeaders.Accept,
+            },
+            redirect: 'follow',
+            cache: 'no-store',
+          })
+
+          if (!proxyRes.ok) continue
+
+          const contentTypeRaw = proxyRes.headers.get('content-type') || ''
+          const contentType = contentTypeRaw.split(';')[0].trim()
+          if (!contentType.startsWith('image/')) continue
+
+          const arrayBuffer = await proxyRes.arrayBuffer()
+          base64 = Buffer.from(arrayBuffer).toString('base64')
+          mediaType = contentType
+          break
+        } catch {
+          proxyRes = null
+        }
+      }
+
+      if (!base64 || !mediaType) {
         const contentType = lastRes?.headers?.get('content-type') || ''
         let snippet = null
-        if (contentType.includes('text') || contentType.includes('json') || contentType.includes('html')) {
-          snippet = lastRes ? (await lastRes.text()).slice(0, 120) : null
-        }
-        res.locals._imageFetchFailure = {
+        try {
+          if (contentType.includes('text') || contentType.includes('json') || contentType.includes('html')) {
+            snippet = lastRes ? (await lastRes.text()).slice(0, 120) : null
+          }
+        } catch {}
+
+        return res.status(500).json({
+          error: 'Could not fetch image',
           status: lastRes?.status,
           contentType,
           snippet,
           tried: uniqueCandidates.slice(0, 6),
-        }
-      } catch {}
+        })
+      }
+    }
+
+    const imageBlock = {
+      type: 'image',
+      source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 },
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -200,7 +231,12 @@ export default async function handler(req, res) {
     const data = await response.json()
     if (!response.ok) {
       console.error('Anthropic error:', data)
-      return res.status(response.status).json(data)
+      const err =
+        data?.error?.message ||
+        data?.message ||
+        (typeof data?.error === 'string' ? data.error : null) ||
+        JSON.stringify(data)
+      return res.status(response.status).json({ error: err, status: response.status })
     }
 
     const text = data.content?.[0]?.text || ''
