@@ -31,6 +31,7 @@ function AppInner() {
   const [approvingImportId, setApprovingImportId] = useState(null)
   const [importProcessing, setImportProcessing] = useState(false)
   const [importParams, setImportParams] = useState(null) // { sourceUrl, imageUrl }
+  const [importError, setImportError] = useState(null)
 
   const RADIUS_MILES = 25
   const [nearMeOnly, setNearMeOnly] = useState(false)
@@ -158,6 +159,7 @@ function AppInner() {
     if (!sourceUrl || !imageUrl) return
 
     setImportParams({ sourceUrl, imageUrl })
+    setImportError(null)
     setShowImportQueue(true)
   }, [])
 
@@ -175,11 +177,13 @@ function AppInner() {
 
     const run = async () => {
       setImportProcessing(true)
+      setImportError(null)
       try {
         const processedKey = `meetmap:import:${user.id}:${importParams.sourceUrl}`
         try {
           if (window.sessionStorage.getItem(processedKey) === '1') {
             setImportParams(null)
+            setImportError(null)
             window.history.replaceState({}, '', window.location.pathname)
             await loadPendingImports()
             return
@@ -192,7 +196,11 @@ function AppInner() {
           body: JSON.stringify({ imageUrl: importParams.imageUrl, sourceUrl: importParams.sourceUrl }),
         })
         const json = await resp.json()
-        if (!resp.ok) throw new Error(json.error || 'Extraction failed')
+        if (!resp.ok) {
+          const msg = json.error || 'Extraction failed'
+          const status = json.status ? ` (status ${json.status})` : ''
+          throw new Error(msg + status)
+        }
         if (!json?.extracted) throw new Error('No extracted data returned')
 
         await createFlyerImport({
@@ -204,6 +212,7 @@ function AppInner() {
 
         if (!cancelled) {
           setImportParams(null)
+          setImportError(null)
           window.history.replaceState({}, '', window.location.pathname)
           await loadPendingImports()
         }
@@ -214,6 +223,9 @@ function AppInner() {
         } catch {}
       } catch (e) {
         console.error('Import processing failed:', e)
+        if (!cancelled) {
+          setImportError(e?.message || 'Import processing failed')
+        }
       } finally {
         if (!cancelled) setImportProcessing(false)
       }
@@ -596,6 +608,8 @@ function AppInner() {
           onApprove={handleApproveImport}
           onReject={handleRejectImport}
           onUpdateImport={handleUpdateImport}
+          requiresAuth={!user}
+          errorMessage={importError}
           onClose={() => setShowImportQueue(false)}
         />
       )}

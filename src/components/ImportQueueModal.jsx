@@ -20,6 +20,8 @@ export default function ImportQueueModal({
   onApprove,
   onReject,
   onUpdateImport,
+  requiresAuth,
+  errorMessage,
   onClose,
 }) {
   const { isLight } = useTheme()
@@ -110,7 +112,11 @@ export default function ImportQueueModal({
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {!imports || imports.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '36px 10px', color: textMuted, fontFamily: "'DM Sans', sans-serif" }}>
-              No pending imports.
+              {requiresAuth
+                ? 'Log in to create this flyer import.'
+                : errorMessage
+                  ? errorMessage
+                  : 'No pending imports.'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

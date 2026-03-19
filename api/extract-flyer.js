@@ -30,23 +30,67 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { imageUrl } = req.body || {}
+    const { imageUrl, sourceUrl } = req.body || {}
     if (!imageUrl) return res.status(400).json({ error: 'Missing imageUrl' })
 
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
 
     // Fetch the flyer image server-side to avoid CORS issues in the browser.
-    const imgRes = await fetch(imageUrl, {
-      headers: {
-        // Some hosts behave better when a user-agent is provided.
-        'User-Agent': 'Mozilla/5.0',
-        Accept: 'image/*',
-      },
+    // Instagram CDN frequently requires a reasonable UA + Referer/Origin.
+    const referer =
+      typeof sourceUrl === 'string' && sourceUrl
+        ? sourceUrl
+        : 'https://www.instagram.com/'
+    const origin =
+      typeof sourceUrl === 'string' && sourceUrl
+        ? (() => {
+          try {
+            return new URL(sourceUrl).origin
+          } catch {}
+          return 'https://www.instagram.com'
+        })()
+        : 'https://www.instagram.com'
+
+    const commonHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121 Safari/537.36',
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      Referer: referer,
+      Origin: origin,
+    }
+
+    let imgRes = await fetch(imageUrl, {
+      headers: commonHeaders,
+      redirect: 'follow',
+      cache: 'no-store',
     })
 
+    // Retry with a simpler Referer if the first attempt was rejected.
+    if (!imgRes.ok && (imgRes.status === 403 || imgRes.status === 429)) {
+      imgRes = await fetch(imageUrl, {
+        headers: { ...commonHeaders, Referer: 'https://www.instagram.com/' },
+        redirect: 'follow',
+        cache: 'no-store',
+      })
+    }
+
     if (!imgRes.ok) {
-      return res.status(500).json({ error: 'Could not fetch image', status: imgRes.status })
+      const contentType = imgRes.headers.get('content-type') || ''
+      let snippet = null
+      try {
+        // If Instagram returns HTML for blocks/throttling, surface a tiny snippet.
+        if (contentType.includes('text') || contentType.includes('json') || contentType.includes('html')) {
+          snippet = (await imgRes.text()).slice(0, 300)
+        }
+      } catch {}
+
+      return res.status(500).json({
+        error: 'Could not fetch image',
+        status: imgRes.status,
+        contentType,
+        snippet,
+      })
     }
 
     const arrayBuffer = await imgRes.arrayBuffer()

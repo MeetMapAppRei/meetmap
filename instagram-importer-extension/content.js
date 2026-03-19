@@ -199,7 +199,20 @@ function ensureButton() {
 
     // Ask the background service worker to open the tab.
     // Content scripts sometimes don't have `chrome.tabs` available.
-    chrome.runtime.sendMessage({ type: 'OPEN_MEETMAP_IMPORT', url })
+    // `sendMessage` can reject when the tab/page navigates quickly (Instagram is
+    // very dynamic). Use the callback form + defensive promise handling so we
+    // don't surface "Extension context invalidated" as an unhandled rejection.
+    try {
+      const maybePromise = chrome.runtime.sendMessage(
+        { type: 'OPEN_MEETMAP_IMPORT', url },
+        () => {}
+      )
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.catch(() => {})
+      }
+    } catch {
+      // Ignore: extension context may have been invalidated during navigation.
+    }
   })
 
   document.body.appendChild(btn)
