@@ -77,6 +77,22 @@ const fetchLatestEventUpdateMap = async (eventIds) => {
   return map
 }
 
+const fetchEventRsvpStatsMap = async (eventIds) => {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
+  const { data, error } = await supabase
+    .from('event_rsvps')
+    .select('event_id, status')
+    .in('event_id', eventIds)
+  if (error) throw error
+  const map = {}
+  for (const row of data || []) {
+    if (!map[row.event_id]) map[row.event_id] = { interested_count: 0, going_count: 0 }
+    if (row.status === 'going') map[row.event_id].going_count += 1
+    if (row.status === 'interested') map[row.event_id].interested_count += 1
+  }
+  return map
+}
+
 export const fetchEventStatuses = async (eventIds) => {
   if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
   const { data, error } = await supabase
@@ -145,6 +161,7 @@ export const fetchEvents = async (filters = {}) => {
   try {
     const statusMap = await fetchEventStatusMap(rows.map(e => e.id))
     const updateMap = await fetchLatestEventUpdateMap(rows.map(e => e.id))
+    const rsvpMap = await fetchEventRsvpStatsMap(rows.map(e => e.id))
     return rows.map(e => ({
       ...e,
       status: statusMap[e.id]?.status || 'active',
@@ -152,6 +169,8 @@ export const fetchEvents = async (filters = {}) => {
       latest_update_id: updateMap[e.id]?.latest_update_id || '',
       latest_update_message: updateMap[e.id]?.latest_update_message || '',
       latest_update_created_at: updateMap[e.id]?.latest_update_created_at || '',
+      interested_count: rsvpMap[e.id]?.interested_count || 0,
+      going_count: rsvpMap[e.id]?.going_count || 0,
     }))
   } catch {
     return rows.map(e => ({
@@ -161,6 +180,8 @@ export const fetchEvents = async (filters = {}) => {
       latest_update_id: '',
       latest_update_message: '',
       latest_update_created_at: '',
+      interested_count: 0,
+      going_count: e.event_attendees?.[0]?.count || e.attendee_count || 0,
     }))
   }
 }
@@ -184,6 +205,8 @@ export const createEvent = async (eventData, userId) => {
     latest_update_id: '',
     latest_update_message: '',
     latest_update_created_at: '',
+    interested_count: 0,
+    going_count: 0,
   }
 }
 
@@ -217,7 +240,14 @@ export const updateEvent = async (eventId, updates) => {
     const updateMap = await fetchLatestEventUpdateMap([eventId])
     latest = updateMap[eventId] || latest
   } catch {}
-  return { ...data, status: finalStatus, status_note: finalStatusNote, ...latest }
+  let rsvpStats = { interested_count: 0, going_count: 0 }
+  try {
+    const rsvpMap = await fetchEventRsvpStatsMap([eventId])
+    rsvpStats = rsvpMap[eventId] || rsvpStats
+  } catch {
+    rsvpStats = { interested_count: 0, going_count: data.event_attendees?.[0]?.count || 0 }
+  }
+  return { ...data, status: finalStatus, status_note: finalStatusNote, ...latest, ...rsvpStats }
 }
 
 // ═══ FLYER IMPORTS (approval queue) ═══════════════════════
@@ -342,6 +372,66 @@ export const getAttendanceStatus = async (eventId, userId) => {
     .eq('user_id', userId)
     .single()
   return !!data
+}
+
+export const getEventRsvpStatus = async (eventId, userId) => {
+  if (!eventId || !userId) return null
+  try {
+    const { data, error } = await supabase
+      .from('event_rsvps')
+      .select('status')
+      .eq('event_id', eventId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (error) throw error
+    return data?.status || null
+  } catch {
+    const attending = await getAttendanceStatus(eventId, userId).catch(() => false)
+    return attending ? 'going' : null
+  }
+}
+
+export const setEventRsvp = async (eventId, userId, status) => {
+  if (!eventId || !userId) return null
+  if (!status) {
+    try {
+      const { error } = await supabase
+        .from('event_rsvps')
+        .delete()
+        .eq('event_id', eventId)
+        .eq('user_id', userId)
+      if (error) throw error
+      return null
+    } catch {
+      await supabase.from('event_attendees').delete().eq('event_id', eventId).eq('user_id', userId)
+      return null
+    }
+  }
+
+  if (!['interested', 'going'].includes(status)) throw new Error('Invalid RSVP status')
+
+  try {
+    const { error } = await supabase
+      .from('event_rsvps')
+      .upsert([{ event_id: eventId, user_id: userId, status }], { onConflict: 'event_id,user_id' })
+    if (error) throw error
+    return status
+  } catch {
+    if (status === 'going') {
+      const attending = await getAttendanceStatus(eventId, userId).catch(() => false)
+      if (!attending) await supabase.from('event_attendees').insert([{ event_id: eventId, user_id: userId }])
+      return 'going'
+    }
+    return 'interested'
+  }
+}
+
+export const fetchEventRsvpStats = async (eventIds) => {
+  try {
+    return await fetchEventRsvpStatsMap(eventIds)
+  } catch {
+    return {}
+  }
 }
 
 // ═══ COMMENTS ════════════════════════════════════════════════

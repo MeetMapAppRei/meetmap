@@ -19,7 +19,8 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
   const today = new Date().toISOString().split('T')[0]
   const isToday = event.date === today
   const isPast = event.date < today
-  const attendeeCount = event.event_attendees?.[0]?.count || event.attendee_count || 0
+  const goingCount = event.going_count || event.event_attendees?.[0]?.count || event.attendee_count || 0
+  const interestedCount = event.interested_count || 0
   const directionsUrl = getDirectionsUrl(event)
   const statusMeta = STATUS_META[String(event.status || 'active').toLowerCase()]
 
@@ -132,7 +133,7 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#666' : '#555' }}>
-            👥 <span style={{ color: isLight ? '#777' : '#777' }}>{attendeeCount} going</span>
+            👥 <span style={{ color: isLight ? '#777' : '#777' }}>{goingCount} going{interestedCount > 0 ? ` · ${interestedCount} interested` : ''}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <a

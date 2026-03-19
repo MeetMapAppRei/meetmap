@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchComments, postComment, toggleAttendance, getAttendanceStatus, updateEvent, uploadEventPhoto, supabase, createEventUpdate } from '../lib/supabase'
+import { fetchComments, postComment, getEventRsvpStatus, setEventRsvp, updateEvent, uploadEventPhoto, supabase, createEventUpdate } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 
@@ -201,8 +201,9 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   const [event, setEvent] = useState(initialEvent)
   const [comments, setComments] = useState([])
   const [commentText, setCommentText] = useState('')
-  const [attending, setAttending] = useState(false)
-  const [attendeeCount, setAttendeeCount] = useState(initialEvent.attendee_count || 0)
+  const [rsvpStatus, setRsvpStatus] = useState(null)
+  const [interestedCount, setInterestedCount] = useState(initialEvent.interested_count || 0)
+  const [goingCount, setGoingCount] = useState(initialEvent.going_count || initialEvent.attendee_count || 0)
   const [posting, setPosting] = useState(false)
   const [postingUpdate, setPostingUpdate] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -224,15 +225,20 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   useEffect(() => {
     fetchComments(event.id).then(setComments).catch(console.error)
     if (user) {
-      getAttendanceStatus(event.id, user.id).then(setAttending)
+      getEventRsvpStatus(event.id, user.id).then(setRsvpStatus)
     }
   }, [event.id, user])
 
-  const handleAttend = async () => {
+  const handleSetRsvp = async (nextStatus) => {
     if (!user) return onAuthNeeded()
-    const isNowAttending = await toggleAttendance(event.id, user.id)
-    setAttending(isNowAttending)
-    setAttendeeCount(prev => isNowAttending ? prev + 1 : prev - 1)
+    const current = rsvpStatus
+    const desired = current === nextStatus ? null : nextStatus
+    await setEventRsvp(event.id, user.id, desired)
+    setRsvpStatus(desired)
+    if (current === 'going') setGoingCount(prev => Math.max(0, prev - 1))
+    if (current === 'interested') setInterestedCount(prev => Math.max(0, prev - 1))
+    if (desired === 'going') setGoingCount(prev => prev + 1)
+    if (desired === 'interested') setInterestedCount(prev => prev + 1)
   }
 
   const handleComment = async () => {
@@ -416,9 +422,14 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
             {!isPast && (
-              <button onClick={handleAttend} style={{ flex: 2, background: attending ? 'transparent' : color, color: attending ? color : '#0A0A0A', border: `1px solid ${color}`, borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 1.5, cursor: 'pointer' }}>
-                {attending ? `✓ YOU'RE GOING · ${attendeeCount}` : `I'M IN · ${attendeeCount} GOING`}
-              </button>
+              <>
+                <button onClick={() => handleSetRsvp('going')} style={{ flex: 1.4, background: rsvpStatus === 'going' ? 'transparent' : color, color: rsvpStatus === 'going' ? color : '#0A0A0A', border: `1px solid ${color}`, borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1.2, cursor: 'pointer' }}>
+                  {rsvpStatus === 'going' ? `✓ GOING · ${goingCount}` : `GOING · ${goingCount}`}
+                </button>
+                <button onClick={() => handleSetRsvp('interested')} style={{ flex: 1.2, background: rsvpStatus === 'interested' ? '#261D08' : shareBg, color: rsvpStatus === 'interested' ? '#FFD700' : shareText, border: `1px solid ${rsvpStatus === 'interested' ? '#FFD700' : shareBorder}`, borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1, cursor: 'pointer' }}>
+                  {rsvpStatus === 'interested' ? `★ INTERESTED · ${interestedCount}` : `INTERESTED · ${interestedCount}`}
+                </button>
+              </>
             )}
             <button
               onClick={onToggleSaved}
