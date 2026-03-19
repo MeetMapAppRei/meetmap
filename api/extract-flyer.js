@@ -182,29 +182,25 @@ export default async function handler(req, res) {
         }
       }
 
+      // We'll still attempt Claude with a URL fallback if base64 retrieval
+      // fails (Instagram CDN signatures can be browser-only).
       if (!base64 || !mediaType) {
-        const contentType = lastRes?.headers?.get('content-type') || ''
-        let snippet = null
-        try {
-          if (contentType.includes('text') || contentType.includes('json') || contentType.includes('html')) {
-            snippet = lastRes ? (await lastRes.text()).slice(0, 120) : null
-          }
-        } catch {}
-
-        return res.status(500).json({
-          error: 'Could not fetch image',
-          status: lastRes?.status,
-          contentType,
-          snippet,
-          tried: uniqueCandidates.slice(0, 6),
-        })
+        base64 = null
+        mediaType = null
       }
     }
 
-    const imageBlock = {
-      type: 'image',
-      source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 },
-    }
+    // Claude expects base64 image data, but we can fall back to providing
+    // the URL directly when our image download fails.
+    const imageBlock = base64 && mediaType
+      ? {
+        type: 'image',
+        source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 },
+      }
+      : {
+        type: 'image',
+        source: { type: 'url', url: imageUrl },
+      }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
