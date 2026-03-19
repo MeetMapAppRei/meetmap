@@ -176,6 +176,16 @@ function AppInner() {
     const run = async () => {
       setImportProcessing(true)
       try {
+        const processedKey = `meetmap:import:${user.id}:${importParams.sourceUrl}:${importParams.imageUrl}`
+        try {
+          if (window.sessionStorage.getItem(processedKey) === '1') {
+            setImportParams(null)
+            window.history.replaceState({}, '', window.location.pathname)
+            await loadPendingImports()
+            return
+          }
+        } catch {}
+
         const resp = await fetch('/api/extract-flyer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -197,6 +207,11 @@ function AppInner() {
           window.history.replaceState({}, '', window.location.pathname)
           await loadPendingImports()
         }
+
+        // Mark as processed only after success.
+        try {
+          window.sessionStorage.setItem(processedKey, '1')
+        } catch {}
       } catch (e) {
         console.error('Import processing failed:', e)
       } finally {

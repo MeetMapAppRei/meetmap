@@ -18,16 +18,33 @@ function upgradeInstagramImage(url) {
 
 function getBestImageUrl() {
   const og = document.querySelector('meta[property="og:image"]')
+  const p = window.location.pathname
+  const isReelsPage = p.startsWith('/reels/') || p.startsWith('/reel/') || p.startsWith('/tv/')
+
+  // For reels/videos: prefer og:image (usually a proper thumbnail/poster), then fall back to video poster.
+  if (isReelsPage) {
+    if (og && og.content && !looksLikeProfileImage(og.content)) return upgradeInstagramImage(og.content)
+    const video = document.querySelector('video')
+    const poster = video?.poster
+    if (poster && !looksLikeProfileImage(poster)) return upgradeInstagramImage(poster)
+  }
+
   if (og && og.content && !looksLikeProfileImage(og.content)) return upgradeInstagramImage(og.content)
 
-  // Reels often include a poster image on the video element.
-  const video = document.querySelector('video')
-  const poster = video?.poster
-  if (poster && !looksLikeProfileImage(poster)) return upgradeInstagramImage(poster)
+  // If it's a reels/video page but poster was missing, keep using video.poster as a fallback.
+  if (isReelsPage) {
+    const video = document.querySelector('video')
+    const poster = video?.poster
+    if (poster && !looksLikeProfileImage(poster)) return upgradeInstagramImage(poster)
+  }
 
   // Fallback: try common post image containers.
   const articleImg = document.querySelector('article img')
   if (articleImg && articleImg.src && !looksLikeProfileImage(articleImg.src)) return upgradeInstagramImage(articleImg.src)
+
+  // Last resort: scan images, but avoid this on reels/video pages because there are often
+  // multiple thumbnails/frames and we can pick the wrong one.
+  if (isReelsPage) return null
 
   const imgs = Array.from(document.images || [])
   if (imgs.length === 0) return null

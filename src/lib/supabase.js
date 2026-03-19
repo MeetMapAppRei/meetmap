@@ -85,6 +85,19 @@ export const fetchFlyerImports = async (userId, status = 'pending') => {
 }
 
 export const createFlyerImport = async ({ userId, sourceUrl, imageUrl, extracted }) => {
+  // Prevent duplicates (extension can trigger multiple times due to browser/app retries).
+  const { data: existing, error: existingErr } = await supabase
+    .from('flyer_imports')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('source_url', sourceUrl)
+    .eq('image_url', imageUrl)
+    .eq('status', 'pending')
+    .maybeSingle()
+
+  if (existingErr) throw existingErr
+  if (existing) return existing
+
   const tagsArray = extracted?.tags && Array.isArray(extracted.tags) ? extracted.tags : extracted?.tags || []
   const payload = {
     user_id: userId,
