@@ -9,6 +9,7 @@ import EventCard from './components/EventCard'
 import MapView from './components/MapView'
 import ImportQueueModal from './components/ImportQueueModal'
 import ModerationQueueModal from './components/ModerationQueueModal'
+import { apiUrl } from './lib/apiOrigin'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -50,6 +51,7 @@ function AppInner() {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState('')
   const [view, setView] = useState('list')
   const [filterType, setFilterType] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -100,6 +102,7 @@ function AppInner() {
     } catch (e) {
       console.error('Failed to load events:', e)
       setLoadError(true)
+      setLoadErrorMessage(e?.message || String(e || 'Unknown error'))
     } finally {
       setLoading(false)
     }
@@ -550,7 +553,7 @@ function AppInner() {
           }
         } catch {}
 
-        const resp = await fetch('/api/extract-flyer', {
+        const resp = await fetch(apiUrl('/api/extract-flyer'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageUrl: importParams.imageUrl, sourceUrl: importParams.sourceUrl }),
@@ -620,7 +623,7 @@ function AppInner() {
       const mediaType = m[1]
       const imageBase64 = m[2]
 
-      const resp = await fetch('/api/extract-flyer', {
+      const resp = await fetch(apiUrl('/api/extract-flyer'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1053,8 +1056,22 @@ function AppInner() {
             <div style={{ textAlign: 'center', padding: '60px 20px' }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#FF6B35', letterSpacing: 1, marginBottom: 8 }}>CONNECTION ERROR</div>
-              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555', marginBottom: 20 }}>Could not load events. Check your connection and try again.</div>
-              <button onClick={() => { setLoadError(false); loadEvents() }} style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '10px 24px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}>RETRY</button>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555', marginBottom: 12 }}>Could not load events.</div>
+              {loadErrorMessage && (
+                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#B00020', marginBottom: 16, whiteSpace: 'pre-wrap' }}>
+                  {loadErrorMessage}
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  setLoadError(false)
+                  setLoadErrorMessage('')
+                  loadEvents()
+                }}
+                style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '10px 24px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}
+              >
+                RETRY
+              </button>
             </div>
           ) : eventsForDisplay.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#333' }}>

@@ -1,7 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5amJpcWdjelFjcXJ4d3Vsc3RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMTEyMjIsImV4cCI6MjA4ODk4NzIyMn0.I6Rk6Ea7GsJyGab0YBH68fDR0A3XPT14VSYz13073Nc'
+// Important: fallback must be valid for your Supabase project.
+// Using the project's anon public key prevents "Invalid API key" in builds where env vars aren't injected.
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  'sb_publishable_WQTdt-GLFcEBE681slkTGQ_y3W5ZQHt'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 

@@ -191,7 +191,7 @@ function ensureButton() {
       return
     }
 
-    const meetmapUrl = 'https://meetmap-gilt.vercel.app/'
+    const meetmapUrl = 'https://findcarmeets.com/'
     const url =
       `${meetmapUrl}?import=1` +
       `&sourceUrl=${encodeURIComponent(sourceUrl)}` +

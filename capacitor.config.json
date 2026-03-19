@@ -1,0 +1,8 @@
+{
+  "appId": "com.meetmap.app",
+  "appName": "Meet Map",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

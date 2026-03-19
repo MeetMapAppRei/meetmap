@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { createEvent, uploadEventPhoto } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
+import { apiUrl } from '../lib/apiOrigin'
 
 const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 600, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
@@ -20,44 +21,43 @@ async function geocodeAddress(address) {
 }
 
 async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
-  const response = await fetch('/api/claude', {
+  const response = await fetch(apiUrl('/api/extract-flyer'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: imageBase64 }
-          },
-          {
-            type: 'text',
-            text: `Extract car meet event info from this flyer. Return ONLY a JSON object with these fields (no markdown, no explanation):
-{
-  "title": "event name",
-  "type": "meet|car show|track day|cruise",
-  "date": "YYYY-MM-DD",
-  "time": "HH:MM",
-  "location": "venue/spot name",
-  "address": "full street address if visible",
-  "city": "City, ST",
-  "host": "organizer name",
-  "description": "any details about the event",
-  "tags": "comma separated tags like JDM, All Makes, etc"
-}
-If a field is not found, use empty string. For date, convert to YYYY-MM-DD format using the current year ${new Date().getFullYear()} if no year is specified on the flyer. For time use 24hr format.`
-          }
-        ]
-      }]
-    })
+      imageBase64,
+      mediaType,
+    }),
   })
-  const data = await response.json()
-  const text = data.content?.[0]?.text || ''
-  const clean = text.replace(/```json|```/g, '').trim()
-  return JSON.parse(clean)
+
+  const status = response.status
+  const statusText = response.statusText
+  const contentType = response.headers.get('content-type') || ''
+  const rawText = await response.text()
+  let data = {}
+  try {
+    data = rawText ? JSON.parse(rawText) : {}
+  } catch {
+    data = {}
+  }
+
+  if (!response.ok) {
+    const err =
+      data?.error?.message ||
+      data?.error ||
+      data?.message ||
+      statusText ||
+      `Request failed (${status})`
+    throw new Error(err)
+  }
+
+  if (!('extracted' in (data || {})) || data?.extracted == null) {
+    const preview = (rawText || JSON.stringify(data) || '')
+      .replace(/\s+/g, ' ')
+      .slice(0, 220)
+    throw new Error(`No extracted data returned (status ${status}, content-type "${contentType}"). Response: ${preview}`)
+  }
+  return data.extracted
 }
 
 export default function PostEventForm({ onClose, onPosted }) {
@@ -73,6 +73,7 @@ export default function PostEventForm({ onClose, onPosted }) {
   const [scanning, setScanning] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
   const [error, setError] = useState('')
+  const [missingFields, setMissingFields] = useState([])
   const [addressStatus, setAddressStatus] = useState('')
   const [flyerSuccess, setFlyerSuccess] = useState(false)
 
@@ -128,6 +129,12 @@ export default function PostEventForm({ onClose, onPosted }) {
     setError('')
     setFlyerSuccess(false)
     try {
+      // The backend has a 10MB body size limit, and base64 inflates payload size.
+      // This catches the most common emulator/large-file case early with a clear message.
+      if (file.size > 8 * 1024 * 1024) {
+        throw new Error('That flyer file is too large for AI extraction on mobile. Try a smaller/cropped image (under ~8MB).')
+      }
+
       // Convert to base64
       const mediaType = file.type || 'image/jpeg'
       const base64 = await new Promise((resolve, reject) => {
@@ -158,7 +165,8 @@ export default function PostEventForm({ onClose, onPosted }) {
         if (result) { setCoords(result); setAddressStatus('found') }
       }
     } catch (e) {
-      setError('Could not read flyer. Try a clearer image or fill in manually.')
+      const msg = e?.message || (typeof e === 'string' ? e : String(e))
+      setError(msg || 'Could not read flyer. Try a clearer image or fill in manually.')
     } finally {
       setScanning(false)
     }
@@ -176,10 +184,19 @@ export default function PostEventForm({ onClose, onPosted }) {
   }
 
   const handleSubmit = async () => {
-    if (!form.title || !form.date || !form.location || !form.city) {
-      setError('Please fill in all required fields.')
+    const required = [
+      { key: 'title', label: 'Event Name' },
+      { key: 'date', label: 'Date' },
+      { key: 'location', label: 'Venue / Spot Name' },
+      { key: 'city', label: 'City, State' },
+    ]
+    const missing = required.filter(f => !String(form[f.key] || '').trim())
+    if (missing.length > 0) {
+      setMissingFields(missing.map(m => m.key))
+      setError(`Please complete: ${missing.map(m => m.label).join(', ')}.`)
       return
     }
+    setMissingFields([])
     setError(''); setLoading(true)
     try {
       let finalCoords = coords
@@ -262,7 +279,15 @@ export default function PostEventForm({ onClose, onPosted }) {
         </select>
 
         <label style={labelStyle}>Event Name *</label>
-        <input style={inputStyle} placeholder="Sunday Funday Car Meet" value={form.title} onChange={e => set('title', e.target.value)} />
+        <input
+          style={{ ...inputStyle, borderColor: missingFields.includes('title') ? '#FF6060' : inputStyle.border }}
+          placeholder="Sunday Funday Car Meet"
+          value={form.title}
+          onChange={e => {
+            set('title', e.target.value)
+            if (missingFields.includes('title')) setMissingFields(prev => prev.filter(k => k !== 'title'))
+          }}
+        />
 
         <label style={labelStyle}>Street Address (for map pin)</label>
         <input
@@ -279,10 +304,26 @@ export default function PostEventForm({ onClose, onPosted }) {
         </div>
 
         <label style={labelStyle}>Venue / Spot Name *</label>
-        <input style={inputStyle} placeholder="Walmart East Lot, AutoZone Parking" value={form.location} onChange={e => set('location', e.target.value)} />
+        <input
+          style={{ ...inputStyle, borderColor: missingFields.includes('location') ? '#FF6060' : inputStyle.border }}
+          placeholder="Walmart East Lot, AutoZone Parking"
+          value={form.location}
+          onChange={e => {
+            set('location', e.target.value)
+            if (missingFields.includes('location')) setMissingFields(prev => prev.filter(k => k !== 'location'))
+          }}
+        />
 
         <label style={labelStyle}>City, State *</label>
-        <input style={inputStyle} placeholder="Riverside, CA" value={form.city} onChange={e => set('city', e.target.value)} />
+        <input
+          style={{ ...inputStyle, borderColor: missingFields.includes('city') ? '#FF6060' : inputStyle.border }}
+          placeholder="Riverside, CA"
+          value={form.city}
+          onChange={e => {
+            set('city', e.target.value)
+            if (missingFields.includes('city')) setMissingFields(prev => prev.filter(k => k !== 'city'))
+          }}
+        />
 
         <label style={labelStyle}>Hosted By</label>
         <input style={inputStyle} placeholder="Your crew / org name" value={form.host} onChange={e => set('host', e.target.value)} />
@@ -291,7 +332,18 @@ export default function PostEventForm({ onClose, onPosted }) {
         <input style={inputStyle} placeholder="JDM, Stance, All Welcome" value={form.tags} onChange={e => set('tags', e.target.value)} />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <div><label style={labelStyle}>Date *</label><input style={inputStyle} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
+          <div>
+            <label style={labelStyle}>Date *</label>
+            <input
+              style={{ ...inputStyle, borderColor: missingFields.includes('date') ? '#FF6060' : inputStyle.border }}
+              type="date"
+              value={form.date}
+              onChange={e => {
+                set('date', e.target.value)
+                if (missingFields.includes('date')) setMissingFields(prev => prev.filter(k => k !== 'date'))
+              }}
+            />
+          </div>
           <div><label style={labelStyle}>Time</label><input style={inputStyle} type="time" value={form.time} onChange={e => set('time', e.target.value)} /></div>
         </div>
 
