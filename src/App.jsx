@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents } from './lib/supabase'
+import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents, fetchEventStatuses } from './lib/supabase'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
@@ -29,6 +29,8 @@ const isImportAdminUser = (user) => {
 }
 const getSavedEventsStorageKey = (user) => `meetmap:saved-events:${user?.id || 'anon'}`
 const getReminderLogStorageKey = (user) => `meetmap:sent-reminders:${user?.id || 'anon'}`
+const getStatusSnapshotStorageKey = (user) => `meetmap:status-snapshot:${user?.id || 'anon'}`
+const getStatusNotifiedStorageKey = (user) => `meetmap:status-notified:${user?.id || 'anon'}`
 
 const eventStartMs = (event) => {
   if (!event?.date) return null
@@ -297,6 +299,70 @@ function AppInner() {
         window.localStorage.setItem(reminderLogKey, JSON.stringify(reminderLog))
       } catch {}
     }
+  }, [notificationPermission, savedEventIds, events, user])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (notificationPermission !== 'granted') return
+    if (!savedEventIds.length) return
+
+    const snapshotKey = getStatusSnapshotStorageKey(user)
+    const notifiedKey = getStatusNotifiedStorageKey(user)
+
+    const checkStatusChanges = async () => {
+      try {
+        const statusMap = await fetchEventStatuses(savedEventIds)
+        let snapshot = {}
+        let notified = {}
+        try {
+          snapshot = JSON.parse(window.localStorage.getItem(snapshotKey) || '{}') || {}
+          notified = JSON.parse(window.localStorage.getItem(notifiedKey) || '{}') || {}
+        } catch {
+          snapshot = {}
+          notified = {}
+        }
+
+        const nextSnapshot = {}
+        const nextNotified = { ...notified }
+        const hasBaseline = Object.keys(snapshot).length > 0
+
+        for (const eventId of savedEventIds) {
+          const row = statusMap[eventId] || { status: 'active', status_note: '', updated_at: '' }
+          const status = String(row.status || 'active').toLowerCase()
+          const note = row.status_note || ''
+          const updatedAt = row.updated_at || ''
+          const signature = `${status}|${note}|${updatedAt}`
+          const previous = snapshot[eventId]
+
+          if (hasBaseline && previous && previous.signature !== signature && nextNotified[eventId] !== signature) {
+            const eventTitle = events.find(e => e.id === eventId)?.title || 'Saved event'
+            const label = status === 'canceled'
+              ? 'Canceled'
+              : status === 'moved'
+                ? 'Moved'
+                : status === 'delayed'
+                  ? 'Delayed'
+                  : 'Updated'
+            new window.Notification(`Status changed: ${eventTitle}`, {
+              body: note ? `${label} • ${note}` : label,
+              icon: '/og-image.svg',
+            })
+            nextNotified[eventId] = signature
+          }
+
+          nextSnapshot[eventId] = { signature }
+        }
+
+        window.localStorage.setItem(snapshotKey, JSON.stringify(nextSnapshot))
+        window.localStorage.setItem(notifiedKey, JSON.stringify(nextNotified))
+      } catch (e) {
+        console.error('Status change notification check failed:', e)
+      }
+    }
+
+    checkStatusChanges()
+    const interval = window.setInterval(checkStatusChanges, 90 * 1000)
+    return () => window.clearInterval(interval)
   }, [notificationPermission, savedEventIds, events, user])
 
   const requestNearMe = () => {

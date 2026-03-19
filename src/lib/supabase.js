@@ -56,6 +56,24 @@ const upsertEventStatus = async (eventId, status = 'active', statusNote = '') =>
   if (error) throw error
 }
 
+export const fetchEventStatuses = async (eventIds) => {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
+  const { data, error } = await supabase
+    .from('event_statuses')
+    .select('event_id, status, status_note, updated_at')
+    .in('event_id', eventIds)
+  if (error) throw error
+  const map = {}
+  for (const row of data || []) {
+    map[row.event_id] = {
+      status: normalizeStatus(row.status),
+      status_note: row.status_note || '',
+      updated_at: row.updated_at || '',
+    }
+  }
+  return map
+}
+
 // ═══ EVENTS ══════════════════════════════════════════════════
 
 export const fetchEvents = async (filters = {}) => {
