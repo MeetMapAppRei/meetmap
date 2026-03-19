@@ -170,7 +170,7 @@ function EditForm({ event, onSaved, onCancel }) {
   )
 }
 
-export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded, onDeleted, onUpdated }) {
+export default function EventDetail({ event: initialEvent, saved = false, onToggleSaved, onClose, onAuthNeeded, onDeleted, onUpdated }) {
   const { user } = useAuth()
   const { isLight } = useTheme()
   const [event, setEvent] = useState(initialEvent)
@@ -347,6 +347,23 @@ export default function EventDetail({ event: initialEvent, onClose, onAuthNeeded
                 {attending ? `✓ YOU'RE GOING · ${attendeeCount}` : `I'M IN · ${attendeeCount} GOING`}
               </button>
             )}
+            <button
+              onClick={onToggleSaved}
+              style={{
+                flex: 1,
+                background: saved ? '#26140E' : shareBg,
+                color: saved ? '#FF8A5C' : shareText,
+                border: `1px solid ${saved ? '#FF6B35' : shareBorder}`,
+                borderRadius: 10,
+                padding: '12px',
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 16,
+                letterSpacing: 1,
+                cursor: 'pointer',
+              }}
+            >
+              {saved ? '★ SAVED' : '☆ SAVE'}
+            </button>
             <button onClick={handleShare} style={{ flex: 1, background: shareBg, color: copied ? '#7CFF6B' : shareText, border: `1px solid ${shareBorder}`, borderRadius: 10, padding: '12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}>
               {copied ? '✓ COPIED!' : '🔗 SHARE'}
             </button>

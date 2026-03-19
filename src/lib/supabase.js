@@ -217,3 +217,41 @@ export const postComment = async (eventId, userId, text) => {
   if (error) throw error
   return data
 }
+
+export const fetchSavedEventIds = async (userId) => {
+  if (!userId) return []
+  const { data, error } = await supabase
+    .from('saved_events')
+    .select('event_id')
+    .eq('user_id', userId)
+  if (error) throw error
+  return (data || []).map(row => row.event_id).filter(Boolean)
+}
+
+export const setSavedEventStatus = async (userId, eventId, shouldSave) => {
+  if (!userId || !eventId) return
+  if (shouldSave) {
+    const { error } = await supabase
+      .from('saved_events')
+      .upsert([{ user_id: userId, event_id: eventId }], { onConflict: 'user_id,event_id', ignoreDuplicates: true })
+    if (error) throw error
+    return true
+  }
+  const { error } = await supabase
+    .from('saved_events')
+    .delete()
+    .eq('user_id', userId)
+    .eq('event_id', eventId)
+  if (error) throw error
+  return false
+}
+
+export const upsertSavedEvents = async (userId, eventIds) => {
+  if (!userId || !Array.isArray(eventIds) || eventIds.length === 0) return
+  const rows = eventIds.filter(Boolean).map(eventId => ({ user_id: userId, event_id: eventId }))
+  if (rows.length === 0) return
+  const { error } = await supabase
+    .from('saved_events')
+    .upsert(rows, { onConflict: 'user_id,event_id', ignoreDuplicates: true })
+  if (error) throw error
+}

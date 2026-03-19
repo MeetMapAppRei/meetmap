@@ -4,7 +4,7 @@ const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
 
-export default function EventCard({ event, onClick }) {
+export default function EventCard({ event, onClick, saved = false, onToggleSaved }) {
   const { isLight } = useTheme()
   const color = TYPE_COLORS[event.type] || '#FF6B35'
   const today = new Date().toISOString().split('T')[0]
@@ -52,20 +52,41 @@ export default function EventCard({ event, onClick }) {
 
       <div style={{ padding: '13px 16px 14px' }}>
         {/* Badges row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: color + '22', color, padding: '2px 9px', borderRadius: 20, textTransform: 'capitalize', letterSpacing: 0.5 }}>
-            {event.type}
-          </span>
-          {isToday && (
-            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: '#FF6B3522', color: '#FF6B35', padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5 }}>
-              TODAY
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: color + '22', color, padding: '2px 9px', borderRadius: 20, textTransform: 'capitalize', letterSpacing: 0.5 }}>
+              {event.type}
             </span>
-          )}
-          {event.featured && (
-            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: '#FFD70022', color: '#FFD700', padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5 }}>
-              ⭐ FEATURED
-            </span>
-          )}
+            {isToday && (
+              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: '#FF6B3522', color: '#FF6B35', padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5 }}>
+                TODAY
+              </span>
+            )}
+            {event.featured && (
+              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: '#FFD70022', color: '#FFD700', padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5 }}>
+                ⭐ FEATURED
+              </span>
+            )}
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleSaved?.(event.id)
+            }}
+            style={{
+              border: `1px solid ${saved ? '#FF6B35' : (isLight ? '#E5E5E5' : '#2A2A2A')}`,
+              background: saved ? '#26140E' : 'transparent',
+              color: saved ? '#FF8A5C' : (isLight ? '#555' : '#888'),
+              borderRadius: 999,
+              padding: '2px 8px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 10,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {saved ? '★ Saved' : '☆ Save'}
+          </button>
         </div>
 
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 21, letterSpacing: 1, marginBottom: 4, lineHeight: 1.1 }}>{event.title}</div>

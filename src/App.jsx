@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage } from './lib/supabase'
+import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents } from './lib/supabase'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
@@ -23,6 +23,7 @@ const isImportAdminUser = (user) => {
   const email = String(user.email || '').toLowerCase()
   return IMPORT_ADMIN_EMAILS.includes(email) || IMPORT_ADMIN_USER_IDS.includes(user.id)
 }
+const getSavedEventsStorageKey = (user) => `meetmap:saved-events:${user?.id || 'anon'}`
 
 function AppInner() {
   const { user, loading: authLoading } = useAuth()
@@ -40,6 +41,9 @@ function AppInner() {
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
   const [showPast, setShowPast] = useState(false)
+  const [showSavedOnly, setShowSavedOnly] = useState(false)
+  const [savedEventIds, setSavedEventIds] = useState([])
+  const [savedSyncAvailable, setSavedSyncAvailable] = useState(true)
 
   const [showImportQueue, setShowImportQueue] = useState(false)
   const [imports, setImports] = useState([])
@@ -103,6 +107,55 @@ function AppInner() {
     setShowAuth(true)
   }
 
+  useEffect(() => {
+    let active = true
+    const loadSavedEvents = async () => {
+      let localIds = []
+      try {
+        const raw = window.localStorage.getItem(getSavedEventsStorageKey(user))
+        const parsed = raw ? JSON.parse(raw) : []
+        localIds = Array.isArray(parsed) ? parsed : []
+      } catch {
+        localIds = []
+      }
+
+      if (!user) {
+        if (active) {
+          setSavedSyncAvailable(true)
+          setSavedEventIds(localIds)
+        }
+        return
+      }
+
+      try {
+        const cloudIds = await fetchSavedEventIds(user.id)
+        const merged = Array.from(new Set([...localIds, ...cloudIds]))
+        if (active) {
+          setSavedSyncAvailable(true)
+          setSavedEventIds(merged)
+        }
+        await upsertSavedEvents(user.id, merged)
+      } catch (e) {
+        console.error('Saved events cloud sync unavailable:', e)
+        if (active) {
+          setSavedSyncAvailable(false)
+          setSavedEventIds(localIds)
+        }
+      }
+    }
+
+    loadSavedEvents()
+    return () => {
+      active = false
+    }
+  }, [user])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(getSavedEventsStorageKey(user), JSON.stringify(savedEventIds))
+    } catch {}
+  }, [user, savedEventIds])
+
   const toRad = (deg) => (deg * Math.PI) / 180
   const distanceMiles = (lat1, lon1, lat2, lon2) => {
     const R = 3958.8 // Earth radius in miles
@@ -121,14 +174,37 @@ function AppInner() {
     return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
   }
 
+  const handleToggleSaved = async (eventId) => {
+    if (!eventId) return
+    let shouldSave = false
+    setSavedEventIds(prev => {
+      const exists = prev.includes(eventId)
+      shouldSave = !exists
+      return exists ? prev.filter(id => id !== eventId) : [eventId, ...prev]
+    })
+
+    if (user && savedSyncAvailable) {
+      try {
+        await setSavedEventStatus(user.id, eventId, shouldSave)
+      } catch (e) {
+        console.error('Failed to sync saved event:', e)
+        setSavedSyncAvailable(false)
+      }
+    }
+  }
+
+  const baseEvents = showSavedOnly
+    ? events.filter(e => savedEventIds.includes(e.id))
+    : events
+
   const eventsForDisplay = nearMeOnly && nearMeCoords
-    ? events
+    ? baseEvents
       .filter(e => Number.isFinite(e.lat) && Number.isFinite(e.lng) && distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES)
       .sort((a, b) => (
         distanceMiles(nearMeCoords.lat, nearMeCoords.lng, a.lat, a.lng) -
         distanceMiles(nearMeCoords.lat, nearMeCoords.lng, b.lat, b.lng)
       ))
-    : events
+    : baseEvents
 
   const upcomingCount = eventsForDisplay.filter(e => e.date >= new Date().toISOString().split('T')[0]).length
 
@@ -612,6 +688,19 @@ function AppInner() {
           >
             {showPast ? '✓ Past Events' : 'Past Events'}
           </button>
+          <button
+            onClick={() => setShowSavedOnly(p => !p)}
+            style={{
+              background: showSavedOnly ? '#26140E' : isLight ? '#F2F2F2' : '#111',
+              color: showSavedOnly ? '#FF8A5C' : '#444',
+              border: '1px solid', borderColor: showSavedOnly ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
+              borderRadius: 20, padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {showSavedOnly ? `★ Saved (${savedEventIds.length})` : 'Saved'}
+          </button>
         </div>
 
         {nearMeError && nearMeOnly && (
@@ -659,7 +748,7 @@ function AppInner() {
                 <div style={{ marginBottom: 4 }}>
                   <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#FF6B35', letterSpacing: 2, marginBottom: 8 }}>⭐ FEATURED</div>
                   {eventsForDisplay.filter(e => e.featured).map(e => (
-                    <EventCard key={e.id} event={e} onClick={() => setSelectedEvent(e)} />
+                    <EventCard key={e.id} event={e} saved={savedEventIds.includes(e.id)} onToggleSaved={handleToggleSaved} onClick={() => setSelectedEvent(e)} />
                   ))}
                   <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#444', letterSpacing: 2, marginBottom: 8, marginTop: 14 }}>ALL EVENTS</div>
                 </div>
@@ -667,7 +756,7 @@ function AppInner() {
               {eventsForDisplay
                 .filter(e => (debouncedSearchQuery || filterType !== 'all') ? true : !e.featured)
                 .map(e => (
-                  <EventCard key={e.id} event={e} onClick={() => setSelectedEvent(e)} />
+                  <EventCard key={e.id} event={e} saved={savedEventIds.includes(e.id)} onToggleSaved={handleToggleSaved} onClick={() => setSelectedEvent(e)} />
                 ))}
             </>
           )}
@@ -719,6 +808,8 @@ function AppInner() {
       {selectedEvent && (
         <EventDetail
           event={selectedEvent}
+          saved={savedEventIds.includes(selectedEvent.id)}
+          onToggleSaved={() => handleToggleSaved(selectedEvent.id)}
           onClose={() => setSelectedEvent(null)}
           onAuthNeeded={handleAuthNeeded}
           onUpdated={handleUpdated}
