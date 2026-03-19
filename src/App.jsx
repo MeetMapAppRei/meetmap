@@ -426,7 +426,7 @@ function AppInner() {
         borderBottom: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
         padding: '14px 18px 10px', position: 'sticky', top: 0, zIndex: 100,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', rowGap: 8 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{ fontSize: 20 }}>🚗</span>
@@ -439,7 +439,7 @@ function AppInner() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
             {user ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555' }}>
@@ -447,7 +447,7 @@ function AppInner() {
                 </div>
                 <button
                   onClick={signOut}
-                  style={{ background: 'none', border: '1px solid #222', borderRadius: 6, padding: '5px 10px', color: '#555', fontFamily: "'DM Sans', sans-serif", fontSize: 11, cursor: 'pointer' }}
+                  style={{ background: 'none', border: '1px solid #222', borderRadius: 6, padding: '5px 8px', color: '#555', fontFamily: "'DM Sans', sans-serif", fontSize: 11, cursor: 'pointer' }}
                 >
                   Sign out
                 </button>
@@ -455,7 +455,7 @@ function AppInner() {
             ) : (
               <button
                 onClick={() => setShowAuth(true)}
-                style={{ background: 'none', border: '1px solid #FF6B3555', borderRadius: 8, padding: '7px 14px', color: '#FF6B35', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1.5, cursor: 'pointer' }}
+                style={{ background: 'none', border: '1px solid #FF6B3555', borderRadius: 8, padding: '7px 10px', color: '#FF6B35', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 1.2, cursor: 'pointer' }}
               >
                 LOG IN
               </button>
@@ -466,10 +466,10 @@ function AppInner() {
                 background: 'none',
                 border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
                 borderRadius: 8,
-                padding: '7px 12px',
+                padding: '7px 9px',
                 color: isLight ? '#444' : '#555',
                 fontFamily: "'DM Sans', sans-serif",
-                fontSize: 12,
+                fontSize: 11,
                 cursor: 'pointer',
                 fontWeight: 700,
               }}
@@ -482,10 +482,10 @@ function AppInner() {
                 background: 'none',
                 border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
                 borderRadius: 8,
-                padding: '7px 12px',
+                padding: '7px 9px',
                 color: isLight ? '#444' : '#555',
                 fontFamily: "'DM Sans', sans-serif",
-                fontSize: 12,
+                fontSize: 11,
                 cursor: 'pointer',
                 fontWeight: 800,
                 letterSpacing: 0.3,
@@ -496,7 +496,7 @@ function AppInner() {
             </button>
             <button
               onClick={() => user ? setShowPost(true) : setShowAuth(true)}
-              style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '8px 14px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1.5, cursor: 'pointer' }}
+              style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '8px 10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 1.2, cursor: 'pointer' }}
             >
               + POST
             </button>
@@ -515,12 +515,12 @@ function AppInner() {
         </div>
 
         {/* Filter chips + past toggle */}
-        <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', overflowX: 'visible', paddingBottom: 2, alignItems: 'center' }}>
           {/* All Events */}
           <button
             onClick={() => setFilterType('all')}
             style={{
-              flexShrink: 0, background: filterType === 'all' ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
+              background: filterType === 'all' ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
               color: filterType === 'all' ? '#0A0A0A' : '#666',
               border: '1px solid', borderColor: filterType === 'all' ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
               borderRadius: 20, padding: '5px 13px',
@@ -538,7 +538,7 @@ function AppInner() {
               else requestNearMe()
             }}
             style={{
-              flexShrink: 0, background: nearMeOnly ? '#333' : isLight ? '#F2F2F2' : '#111',
+              background: nearMeOnly ? '#333' : isLight ? '#F2F2F2' : '#111',
               color: nearMeOnly ? '#aaa' : '#444',
               border: '1px solid', borderColor: nearMeOnly ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
               borderRadius: 20, padding: '5px 13px',
@@ -557,7 +557,7 @@ function AppInner() {
               key={type}
               onClick={() => setFilterType(type)}
               style={{
-                flexShrink: 0, background: filterType === type ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
+                background: filterType === type ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
                 color: filterType === type ? '#0A0A0A' : '#666',
                 border: '1px solid', borderColor: filterType === type ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
                 borderRadius: 20, padding: '5px 13px',
@@ -573,7 +573,7 @@ function AppInner() {
           <button
             onClick={() => setShowPast(p => !p)}
             style={{
-              flexShrink: 0, background: showPast ? '#333' : isLight ? '#F2F2F2' : '#111',
+              background: showPast ? '#333' : isLight ? '#F2F2F2' : '#111',
               color: showPast ? '#aaa' : '#444',
               border: '1px solid', borderColor: showPast ? '#444' : isLight ? '#E5E5E5' : '#1A1A1A',
               borderRadius: 20, padding: '5px 13px',
