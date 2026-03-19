@@ -16,6 +16,32 @@ function upgradeInstagramImage(url) {
   return String(url).replace(/\/s\d+x\d+\//, '/s1080x1080/')
 }
 
+function parseInstagramDims(url) {
+  // Instagram often encodes size in the URL like:
+  // - .../s640x640/....
+  // - ..._dst-jpg_e35_s640x640_tt6...
+  if (!url) return null
+  const s = String(url)
+  let m = s.match(/\/s(\d+)x(\d+)\//i)
+  if (m) return { w: parseInt(m[1], 10), h: parseInt(m[2], 10) }
+  m = s.match(/s(\d+)x(\d+)/i)
+  if (m) return { w: parseInt(m[1], 10), h: parseInt(m[2], 10) }
+  return null
+}
+
+function scoreInstagramImage(url) {
+  const dims = parseInstagramDims(url)
+  if (!dims) return 50 // unknown; keep as fallback
+  const maxDim = Math.max(dims.w, dims.h)
+  if (!dims.h) return maxDim
+  const ratio = dims.w / dims.h
+  const ratioDiff = Math.abs(1 - ratio)
+  const isSquare = ratioDiff < 0.05
+  // Penalize square-ish crops a bit since they often come from in-feed thumbnails.
+  const nonSquareMultiplier = isSquare ? 0.85 : 1.15
+  return maxDim * nonSquareMultiplier + ratioDiff * 200
+}
+
 function bestFromSrcset(srcset) {
   const s = String(srcset || '')
   if (!s) return null
@@ -24,11 +50,9 @@ function bestFromSrcset(srcset) {
   let best = null
   for (const p of parts) {
     const [urlPart, wPart] = p.split(/\s+/)
-    const w = parseInt(String(wPart || '').replace('w', ''), 10)
     if (!urlPart) continue
-    if (Number.isFinite(w)) {
-      if (!best || w > best.w) best = { url: urlPart, w }
-    }
+    const score = scoreInstagramImage(urlPart)
+    if (!best || score > best.score) best = { url: urlPart, score }
   }
   return best?.url || null
 }
@@ -42,23 +66,38 @@ function getBestImageUrl() {
 
   const mainArea = document.querySelector('div[role="main"]') || document
 
-  // On reels/videos, prefer OG/Twitter meta first because DOM images are frequently
-  // resized/cropped for in-feed display (which causes the "cut off" flyers you saw).
+  // On reels/videos we need the "real" poster/flyer image, not a cropped square thumbnail.
+  // We'll evaluate a few candidate URLs and pick the one that looks most rectangular
+  // (by scoring parsed dims from the Instagram CDN URL).
   if (isReelsPage) {
     const ogVal = ogSecure?.content || og?.content || twitter?.content
-    if (ogVal && !looksLikeProfileImage(ogVal)) return upgradeInstagramImage(ogVal)
     const video = document.querySelector('video')
     const poster = video?.poster
-    if (poster && !looksLikeProfileImage(poster)) return upgradeInstagramImage(poster)
+    const candidates = []
 
-    // If meta/poster is missing, only then fall back to the main media area's srcset.
+    if (ogVal && !looksLikeProfileImage(ogVal)) {
+      candidates.push(upgradeInstagramImage(ogVal))
+    }
+    if (poster && !looksLikeProfileImage(poster)) {
+      candidates.push(upgradeInstagramImage(poster))
+    }
+
     const mainMediaImg = mainArea.querySelector('article img[srcset], article img[src]')
     if (mainMediaImg) {
       const srcset = mainMediaImg.getAttribute('srcset')
-      const best = bestFromSrcset(srcset)
+      const best = srcset ? bestFromSrcset(srcset) : null
       const candidate = best || mainMediaImg.src
-      if (candidate && !looksLikeProfileImage(candidate)) return upgradeInstagramImage(candidate)
+      if (candidate && !looksLikeProfileImage(candidate)) {
+        candidates.push(upgradeInstagramImage(candidate))
+      }
     }
+
+    let best = null
+    for (const url of candidates) {
+      const score = scoreInstagramImage(url)
+      if (!best || score > best.score) best = { url, score }
+    }
+    if (best?.url) return best.url
   }
 
   if (ogSecure?.content && !looksLikeProfileImage(ogSecure.content)) return upgradeInstagramImage(ogSecure.content)
