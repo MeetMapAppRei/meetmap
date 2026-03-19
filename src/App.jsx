@@ -176,7 +176,7 @@ function AppInner() {
     const run = async () => {
       setImportProcessing(true)
       try {
-        const processedKey = `meetmap:import:${user.id}:${importParams.sourceUrl}:${importParams.imageUrl}`
+        const processedKey = `meetmap:import:${user.id}:${importParams.sourceUrl}`
         try {
           if (window.sessionStorage.getItem(processedKey) === '1') {
             setImportParams(null)

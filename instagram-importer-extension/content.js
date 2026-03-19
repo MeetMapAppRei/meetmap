@@ -16,20 +16,54 @@ function upgradeInstagramImage(url) {
   return String(url).replace(/\/s\d+x\d+\//, '/s1080x1080/')
 }
 
+function bestFromSrcset(srcset) {
+  const s = String(srcset || '')
+  if (!s) return null
+  // srcset format: "url1 640w, url2 1080w"
+  const parts = s.split(',').map(p => p.trim()).filter(Boolean)
+  let best = null
+  for (const p of parts) {
+    const [urlPart, wPart] = p.split(/\s+/)
+    const w = parseInt(String(wPart || '').replace('w', ''), 10)
+    if (!urlPart) continue
+    if (Number.isFinite(w)) {
+      if (!best || w > best.w) best = { url: urlPart, w }
+    }
+  }
+  return best?.url || null
+}
+
 function getBestImageUrl() {
   const og = document.querySelector('meta[property="og:image"]')
+  const twitter = document.querySelector('meta[property="twitter:image"]')
+  const ogSecure = document.querySelector('meta[property="og:image:secure_url"]')
   const p = window.location.pathname
   const isReelsPage = p.startsWith('/reels/') || p.startsWith('/reel/') || p.startsWith('/tv/')
 
-  // For reels/videos: prefer og:image (usually a proper thumbnail/poster), then fall back to video poster.
+  // For reels/videos: prefer a proper thumbnail/poster image.
+  // If we can find an <img> with srcset in the main media area, pick the highest-res from srcset.
+  const mainArea = document.querySelector('div[role="main"]') || document
+
+  const mainMediaImg = mainArea.querySelector('article img[srcset], article img[src]')
+  if (isReelsPage && mainMediaImg) {
+    const srcset = mainMediaImg.getAttribute('srcset')
+    const best = bestFromSrcset(srcset)
+    const candidate = best || mainMediaImg.src
+    if (candidate && !looksLikeProfileImage(candidate)) return upgradeInstagramImage(candidate)
+  }
+
+  // Try OG/Twitter meta next (usually highest chance of correctness).
   if (isReelsPage) {
-    if (og && og.content && !looksLikeProfileImage(og.content)) return upgradeInstagramImage(og.content)
+    const ogVal = ogSecure?.content || og?.content || twitter?.content
+    if (ogVal && !looksLikeProfileImage(ogVal)) return upgradeInstagramImage(ogVal)
     const video = document.querySelector('video')
     const poster = video?.poster
     if (poster && !looksLikeProfileImage(poster)) return upgradeInstagramImage(poster)
   }
 
-  if (og && og.content && !looksLikeProfileImage(og.content)) return upgradeInstagramImage(og.content)
+  if (ogSecure?.content && !looksLikeProfileImage(ogSecure.content)) return upgradeInstagramImage(ogSecure.content)
+  if (og?.content && !looksLikeProfileImage(og.content)) return upgradeInstagramImage(og.content)
+  if (twitter?.content && !looksLikeProfileImage(twitter.content)) return upgradeInstagramImage(twitter.content)
 
   // If it's a reels/video page but poster was missing, keep using video.poster as a fallback.
   if (isReelsPage) {
@@ -93,7 +127,9 @@ function ensureButton() {
   btn.style.boxShadow = '0 10px 30px rgba(0,0,0,0.25)'
 
   btn.addEventListener('click', async () => {
-    const sourceUrl = window.location.href
+    const u = new URL(window.location.href)
+    // Normalize to avoid dedupe misses caused by tracking params like ?igsh=...
+    const sourceUrl = `${u.origin}${u.pathname}`
     const imageUrl = getBestImageUrl()
 
     if (!imageUrl) {
