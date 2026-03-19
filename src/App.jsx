@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { fetchEvents, signOut } from './lib/supabase'
+import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, signOut } from './lib/supabase'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
 import EventDetail from './components/EventDetail'
 import EventCard from './components/EventCard'
 import MapView from './components/MapView'
+import ImportQueueModal from './components/ImportQueueModal'
 
 function AppInner() {
   const { user, loading: authLoading } = useAuth()
-  const { theme, toggleTheme, isLight } = useTheme()
+  const { toggleTheme, isLight } = useTheme()
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -23,6 +24,13 @@ function AppInner() {
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
   const [showPast, setShowPast] = useState(false)
+
+  const [showImportQueue, setShowImportQueue] = useState(false)
+  const [imports, setImports] = useState([])
+  const [importsLoading, setImportsLoading] = useState(false)
+  const [approvingImportId, setApprovingImportId] = useState(null)
+  const [importProcessing, setImportProcessing] = useState(false)
+  const [importParams, setImportParams] = useState(null) // { sourceUrl, imageUrl }
 
   const RADIUS_MILES = 25
   const [nearMeOnly, setNearMeOnly] = useState(false)
@@ -87,6 +95,14 @@ function AppInner() {
     return R * c
   }
 
+  async function geocodeAddress(address) {
+    if (!address || !address.trim()) return null
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`)
+    const data = await res.json()
+    if (!data.length) return null
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+  }
+
   const eventsForDisplay = nearMeOnly && nearMeCoords
     ? events
       .filter(e => Number.isFinite(e.lat) && Number.isFinite(e.lng) && distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES)
@@ -112,6 +128,139 @@ function AppInner() {
       err => setNearMeError(err.message || 'Could not get location'),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 5 * 60 * 1000 }
     )
+  }
+
+  const loadPendingImports = useCallback(async () => {
+    if (!user) return
+    setImportsLoading(true)
+    try {
+      const data = await fetchFlyerImports(user.id, 'pending')
+      setImports(data || [])
+    } catch (e) {
+      console.error('Failed to load flyer imports:', e)
+    } finally {
+      setImportsLoading(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (!showImportQueue) return
+    if (!user) return
+    loadPendingImports()
+  }, [showImportQueue, user, loadPendingImports])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const importFlag = params.get('import')
+    if (importFlag !== '1') return
+    const sourceUrl = params.get('sourceUrl') || ''
+    const imageUrl = params.get('imageUrl') || ''
+    if (!sourceUrl || !imageUrl) return
+
+    setImportParams({ sourceUrl, imageUrl })
+    setShowImportQueue(true)
+  }, [])
+
+  useEffect(() => {
+    if (!importParams) return
+    if (authLoading) return
+    if (!user) setShowAuth(true)
+  }, [importParams, authLoading, user])
+
+  useEffect(() => {
+    if (!importParams) return
+    if (!user) return
+    if (!showImportQueue) return
+    let cancelled = false
+
+    const run = async () => {
+      setImportProcessing(true)
+      try {
+        const resp = await fetch('/api/extract-flyer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageUrl: importParams.imageUrl, sourceUrl: importParams.sourceUrl }),
+        })
+        const json = await resp.json()
+        if (!resp.ok) throw new Error(json.error || 'Extraction failed')
+        if (!json?.extracted) throw new Error('No extracted data returned')
+
+        await createFlyerImport({
+          userId: user.id,
+          sourceUrl: importParams.sourceUrl,
+          imageUrl: importParams.imageUrl,
+          extracted: json.extracted,
+        })
+
+        if (!cancelled) {
+          setImportParams(null)
+          window.history.replaceState({}, '', window.location.pathname)
+          await loadPendingImports()
+        }
+      } catch (e) {
+        console.error('Import processing failed:', e)
+      } finally {
+        if (!cancelled) setImportProcessing(false)
+      }
+    }
+
+    run()
+    return () => {
+      cancelled = true
+    }
+  }, [importParams, user, showImportQueue, loadPendingImports])
+
+  const handleApproveImport = async (imp) => {
+    if (!user || !imp) return
+    setApprovingImportId(imp.id)
+    try {
+      const required = ['title', 'type', 'date', 'location', 'city']
+      const ready = required.every(k => typeof imp?.[k] === 'string' ? imp[k].trim().length > 0 : !!imp?.[k])
+      if (!ready) return
+
+      let coords = null
+      // Prefer AI-provided full address; otherwise fall back to venue + city.
+      const query = imp.address?.trim() ? imp.address : `${imp.location || ''}, ${imp.city || ''}`.trim()
+      if (query) coords = await geocodeAddress(query).catch(() => null)
+
+      const tags = Array.isArray(imp.tags) ? imp.tags : []
+
+      const created = await createEvent({
+        title: imp.title,
+        type: imp.type,
+        date: imp.date,
+        time: imp.time || null,
+        location: imp.location,
+        city: imp.city,
+        address: imp.address || null,
+        description: imp.description || null,
+        tags,
+        host: imp.host || null,
+        lat: coords?.lat || null,
+        lng: coords?.lng || null,
+        photo_url: imp.image_url || null,
+      }, user.id)
+
+      await updateFlyerImportStatus(imp.id, 'approved')
+      // Add into the local feed immediately for better UX.
+      setEvents(prev => [created, ...prev])
+      setSelectedEvent(created)
+      setShowImportQueue(false)
+    } catch (e) {
+      console.error('Approve failed:', e)
+    } finally {
+      setApprovingImportId(null)
+    }
+  }
+
+  const handleRejectImport = async (imp) => {
+    if (!user || !imp) return
+    try {
+      await updateFlyerImportStatus(imp.id, 'rejected')
+      await loadPendingImports()
+    } catch (e) {
+      console.error('Reject failed:', e)
+    }
   }
 
   return (
@@ -190,6 +339,24 @@ function AppInner() {
               }}
             >
               {isLight ? 'LIGHT' : 'DARK'}
+            </button>
+            <button
+              onClick={() => user ? setShowImportQueue(true) : setShowAuth(true)}
+              style={{
+                background: 'none',
+                border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+                borderRadius: 8,
+                padding: '7px 12px',
+                color: isLight ? '#444' : '#555',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                cursor: 'pointer',
+                fontWeight: 800,
+                letterSpacing: 0.3,
+                textTransform: 'uppercase',
+              }}
+            >
+              Imports
             </button>
             <button
               onClick={() => user ? setShowPost(true) : setShowAuth(true)}
@@ -368,6 +535,16 @@ function AppInner() {
       {/* ── MODALS ── */}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
       {showPost && <PostEventForm onClose={() => setShowPost(false)} onPosted={handlePosted} />}
+      {showImportQueue && (
+        <ImportQueueModal
+          imports={imports}
+          loading={importsLoading || importProcessing}
+          approvingId={approvingImportId}
+          onApprove={handleApproveImport}
+          onReject={handleRejectImport}
+          onClose={() => setShowImportQueue(false)}
+        />
+      )}
       {selectedEvent && (
         <EventDetail
           event={selectedEvent}

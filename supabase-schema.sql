@@ -59,6 +59,39 @@ create policy "Users can delete own events" on public.events for delete using (a
 -- If you're updating an existing project, you can re-run this line safely:
 alter table public.events add column if not exists address text;
 
+-- 2.5. FLYER IMPORT QUEUE (for AI extraction + approval)
+-- Stores extracted flyer details that require approval before creating real events.
+create table public.flyer_imports (
+  id uuid default gen_random_uuid primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  source_url text not null,
+  image_url text not null,
+  status text not null check (status in ('pending', 'approved', 'rejected')) default 'pending',
+  extracted jsonb not null default '{}'::jsonb,
+
+  -- Flattened fields (so UI can quickly check required fields)
+  title text,
+  type text,
+  date date,
+  time text,
+  location text,
+  city text,
+  address text,
+  host text,
+  description text,
+  tags text[] default '{}',
+
+  created_at timestamptz default now()
+);
+
+alter table public.flyer_imports enable row level security;
+create policy "Flyer imports are viewable by owner" on public.flyer_imports
+  for select using (auth.uid() = user_id);
+create policy "Flyer imports are insertable by owner" on public.flyer_imports
+  for insert with check (auth.uid() = user_id);
+create policy "Flyer imports are updatable by owner" on public.flyer_imports
+  for update using (auth.uid() = user_id);
+
 -- 3. ATTENDEES
 create table public.event_attendees (
   id uuid default gen_random_uuid() primary key,

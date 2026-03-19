@@ -72,6 +72,52 @@ export const updateEvent = async (eventId, updates) => {
   return data
 }
 
+// ═══ FLYER IMPORTS (approval queue) ═══════════════════════
+export const fetchFlyerImports = async (userId, status = 'pending') => {
+  const { data, error } = await supabase
+    .from('flyer_imports')
+    .select('id, user_id, source_url, image_url, status, extracted, title, type, date, time, location, city, address, host, description, tags, created_at')
+    .eq('user_id', userId)
+    .eq('status', status)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+export const createFlyerImport = async ({ userId, sourceUrl, imageUrl, extracted }) => {
+  const tagsArray = extracted?.tags && Array.isArray(extracted.tags) ? extracted.tags : extracted?.tags || []
+  const payload = {
+    user_id: userId,
+    source_url: sourceUrl,
+    image_url: imageUrl,
+    extracted: extracted || {},
+    title: extracted?.title || null,
+    type: extracted?.type || null,
+    date: extracted?.date || null,
+    time: extracted?.time || null,
+    location: extracted?.location || null,
+    city: extracted?.city || null,
+    address: extracted?.address || null,
+    host: extracted?.host || null,
+    description: extracted?.description || null,
+    tags: typeof tagsArray === 'string' ? tagsArray.split(',').map(t => t.trim()).filter(Boolean) : tagsArray,
+  }
+  const { data, error } = await supabase.from('flyer_imports').insert([payload]).select('*').single()
+  if (error) throw error
+  return data
+}
+
+export const updateFlyerImportStatus = async (importId, status) => {
+  const { data, error } = await supabase
+    .from('flyer_imports')
+    .update({ status })
+    .eq('id', importId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
 export const uploadEventPhoto = async (file, eventId) => {
   const ext = file.name.split('.').pop()
   const path = `events/${eventId}/${Date.now()}.${ext}`
