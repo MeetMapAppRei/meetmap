@@ -40,25 +40,25 @@ function getBestImageUrl() {
   const p = window.location.pathname
   const isReelsPage = p.startsWith('/reels/') || p.startsWith('/reel/') || p.startsWith('/tv/')
 
-  // For reels/videos: prefer a proper thumbnail/poster image.
-  // If we can find an <img> with srcset in the main media area, pick the highest-res from srcset.
   const mainArea = document.querySelector('div[role="main"]') || document
 
-  const mainMediaImg = mainArea.querySelector('article img[srcset], article img[src]')
-  if (isReelsPage && mainMediaImg) {
-    const srcset = mainMediaImg.getAttribute('srcset')
-    const best = bestFromSrcset(srcset)
-    const candidate = best || mainMediaImg.src
-    if (candidate && !looksLikeProfileImage(candidate)) return upgradeInstagramImage(candidate)
-  }
-
-  // Try OG/Twitter meta next (usually highest chance of correctness).
+  // On reels/videos, prefer OG/Twitter meta first because DOM images are frequently
+  // resized/cropped for in-feed display (which causes the "cut off" flyers you saw).
   if (isReelsPage) {
     const ogVal = ogSecure?.content || og?.content || twitter?.content
     if (ogVal && !looksLikeProfileImage(ogVal)) return upgradeInstagramImage(ogVal)
     const video = document.querySelector('video')
     const poster = video?.poster
     if (poster && !looksLikeProfileImage(poster)) return upgradeInstagramImage(poster)
+
+    // If meta/poster is missing, only then fall back to the main media area's srcset.
+    const mainMediaImg = mainArea.querySelector('article img[srcset], article img[src]')
+    if (mainMediaImg) {
+      const srcset = mainMediaImg.getAttribute('srcset')
+      const best = bestFromSrcset(srcset)
+      const candidate = best || mainMediaImg.src
+      if (candidate && !looksLikeProfileImage(candidate)) return upgradeInstagramImage(candidate)
+    }
   }
 
   if (ogSecure?.content && !looksLikeProfileImage(ogSecure.content)) return upgradeInstagramImage(ogSecure.content)
