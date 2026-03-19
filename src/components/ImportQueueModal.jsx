@@ -160,6 +160,22 @@ export default function ImportQueueModal({
                         </div>
                       </div>
 
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: textMuted }}>
+                            Flyer image
+                          </div>
+                          <a
+                            href={i.image_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: '#FF6B35', fontFamily: "'DM Sans', sans-serif", fontSize: 12, textDecoration: 'underline', wordBreak: 'break-all', maxWidth: 260, display: 'inline-block' }}
+                          >
+                            Open
+                          </a>
+                        </div>
+                      </div>
+
                       <div style={{ marginTop: 10, fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: textMuted, lineHeight: 1.45 }}>
                         {i.description ? i.description.slice(0, 180) + (i.description.length > 180 ? '…' : '') : 'No description found.'}
                       </div>

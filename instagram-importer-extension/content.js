@@ -1,23 +1,47 @@
+function looksLikeProfileImage(url) {
+  const u = String(url || '').toLowerCase()
+  return (
+    u.includes('profile') ||
+    u.includes('avatar') ||
+    u.includes('default') ||
+    u.includes('small') ||
+    u.includes('icon') ||
+    u.includes('logo')
+  )
+}
+
+function upgradeInstagramImage(url) {
+  if (!url) return url
+  // Many IG CDN URLs include /s640x640/ or /s320x320/ etc. Try bumping size.
+  return String(url).replace(/\/s\d+x\d+\//, '/s1080x1080/')
+}
+
 function getBestImageUrl() {
   const og = document.querySelector('meta[property="og:image"]')
-  if (og && og.content) return og.content
+  if (og && og.content && !looksLikeProfileImage(og.content)) return upgradeInstagramImage(og.content)
+
+  // Reels often include a poster image on the video element.
+  const video = document.querySelector('video')
+  const poster = video?.poster
+  if (poster && !looksLikeProfileImage(poster)) return upgradeInstagramImage(poster)
 
   // Fallback: try common post image containers.
   const articleImg = document.querySelector('article img')
-  if (articleImg && articleImg.src) return articleImg.src
+  if (articleImg && articleImg.src && !looksLikeProfileImage(articleImg.src)) return upgradeInstagramImage(articleImg.src)
 
   const imgs = Array.from(document.images || [])
   if (imgs.length === 0) return null
 
-  // Pick the largest image by area as a simple heuristic.
+  // Pick the largest image by area as a simple heuristic (avoid obvious avatars/icons).
   let best = null
   for (const img of imgs) {
     const w = img.naturalWidth || 0
     const h = img.naturalHeight || 0
     if (!w || !h) continue
+    if (looksLikeProfileImage(img.src)) continue
     if (!best || w * h > best.w * best.h) best = { url: img.src, w, h }
   }
-  return best?.url || null
+  return best?.url ? upgradeInstagramImage(best.url) : null
 }
 
 function ensureButton() {
