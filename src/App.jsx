@@ -9,9 +9,25 @@ import EventCard from './components/EventCard'
 import MapView from './components/MapView'
 import ImportQueueModal from './components/ImportQueueModal'
 
+const parseCsvEnv = (value) =>
+  String(value || '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean)
+
+const IMPORT_ADMIN_EMAILS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_EMAILS).map(v => v.toLowerCase())
+const IMPORT_ADMIN_USER_IDS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_USER_IDS)
+
+const isImportAdminUser = (user) => {
+  if (!user) return false
+  const email = String(user.email || '').toLowerCase()
+  return IMPORT_ADMIN_EMAILS.includes(email) || IMPORT_ADMIN_USER_IDS.includes(user.id)
+}
+
 function AppInner() {
   const { user, loading: authLoading } = useAuth()
   const { toggleTheme, isLight } = useTheme()
+  const canAccessImports = isImportAdminUser(user)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -133,7 +149,7 @@ function AppInner() {
   }
 
   const loadPendingImports = useCallback(async () => {
-    if (!user) return
+    if (!user || !canAccessImports) return
     setImportsLoading(true)
     try {
       const data = await fetchFlyerImports(user.id, 'pending')
@@ -143,7 +159,7 @@ function AppInner() {
     } finally {
       setImportsLoading(false)
     }
-  }, [user])
+  }, [user, canAccessImports])
 
   useEffect(() => {
     if (!showImportQueue) return
@@ -167,12 +183,22 @@ function AppInner() {
   useEffect(() => {
     if (!importParams) return
     if (authLoading) return
-    if (!user) setShowAuth(true)
-  }, [importParams, authLoading, user])
+    if (!user) {
+      setShowAuth(true)
+      return
+    }
+    if (!canAccessImports) {
+      setImportParams(null)
+      setImportError(null)
+      setShowImportQueue(false)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [importParams, authLoading, user, canAccessImports])
 
   useEffect(() => {
     if (!importParams) return
     if (!user) return
+    if (!canAccessImports) return
     if (!showImportQueue) return
     let cancelled = false
 
@@ -241,9 +267,10 @@ function AppInner() {
     return () => {
       cancelled = true
     }
-  }, [importParams, user, showImportQueue, loadPendingImports])
+  }, [importParams, user, canAccessImports, showImportQueue, loadPendingImports])
 
   const handleUploadFlyer = async (file) => {
+    if (!canAccessImports) return
     if (!file || !importParams?.sourceUrl) return
     setImportUploading(true)
     setImportError(null)
@@ -309,7 +336,7 @@ function AppInner() {
   }
 
   const handleApproveImport = async (imp) => {
-    if (!user || !imp) return
+    if (!canAccessImports || !user || !imp) return
     setApprovingImportId(imp.id)
     try {
       const required = ['title', 'type', 'date', 'location', 'city']
@@ -352,7 +379,7 @@ function AppInner() {
   }
 
   const handleRejectImport = async (imp) => {
-    if (!user || !imp) return
+    if (!canAccessImports || !user || !imp) return
     try {
       await updateFlyerImportStatus(imp.id, 'rejected')
       await loadPendingImports()
@@ -362,7 +389,7 @@ function AppInner() {
   }
 
   const handleUpdateImport = async (importId, nextDraft) => {
-    if (!user || !importId || !nextDraft) return
+    if (!canAccessImports || !user || !importId || !nextDraft) return
     const tags = (nextDraft.tagsText || '')
       .split(',')
       .map(t => t.trim())
@@ -476,24 +503,26 @@ function AppInner() {
             >
               {isLight ? 'LIGHT' : 'DARK'}
             </button>
-            <button
-              onClick={() => user ? setShowImportQueue(true) : setShowAuth(true)}
-              style={{
-                background: 'none',
-                border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
-                borderRadius: 8,
-                padding: '7px 9px',
-                color: isLight ? '#444' : '#555',
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: 11,
-                cursor: 'pointer',
-                fontWeight: 800,
-                letterSpacing: 0.3,
-                textTransform: 'uppercase',
-              }}
-            >
-              Imports
-            </button>
+            {canAccessImports && (
+              <button
+                onClick={() => setShowImportQueue(true)}
+                style={{
+                  background: 'none',
+                  border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+                  borderRadius: 8,
+                  padding: '7px 9px',
+                  color: isLight ? '#444' : '#555',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Imports
+              </button>
+            )}
             <button
               onClick={() => user ? setShowPost(true) : setShowAuth(true)}
               style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '8px 10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 1.2, cursor: 'pointer' }}
@@ -671,7 +700,7 @@ function AppInner() {
       {/* ── MODALS ── */}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
       {showPost && <PostEventForm onClose={() => setShowPost(false)} onPosted={handlePosted} />}
-      {showImportQueue && (
+      {showImportQueue && canAccessImports && (
         <ImportQueueModal
           imports={imports}
           loading={importsLoading || importProcessing}
