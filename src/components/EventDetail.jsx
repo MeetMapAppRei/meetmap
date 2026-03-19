@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { fetchComments, postComment, getEventRsvpStatus, setEventRsvp, updateEvent, uploadEventPhoto, supabase, createEventUpdate } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
+import { getEventQuality } from '../lib/eventQuality'
 
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
@@ -219,6 +220,7 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
     ? String(event.status).toLowerCase()
     : 'active'
   const statusMeta = STATUS_META[statusKey]
+  const quality = getEventQuality(event)
   const directionsUrl = getDirectionsUrl(event)
   const isOwner = user && event.user_id === user.id
 
@@ -376,6 +378,25 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
           {statusKey !== 'active' && (
             <span style={{ marginLeft: 8, fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 700, color: statusMeta.fg, background: statusMeta.bg, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               {statusMeta.label}
+            </span>
+          )}
+          {quality && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                fontWeight: 700,
+                color: quality.fg,
+                background: quality.bg,
+                padding: '3px 10px',
+                borderRadius: 20,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+              title={`${quality.label} (${quality.score}/100)`}
+            >
+              {quality.short}
             </span>
           )}
 

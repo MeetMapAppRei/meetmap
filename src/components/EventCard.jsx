@@ -1,4 +1,5 @@
 import { useTheme } from '../lib/ThemeContext'
+import { getEventQuality } from '../lib/eventQuality'
 
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
@@ -23,6 +24,7 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
   const interestedCount = event.interested_count || 0
   const directionsUrl = getDirectionsUrl(event)
   const statusMeta = STATUS_META[String(event.status || 'active').toLowerCase()]
+  const quality = getEventQuality(event)
 
   return (
     <div
@@ -82,6 +84,24 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
             {statusMeta && (
               <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: statusMeta.bg, color: statusMeta.fg, padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5, textTransform: 'uppercase' }}>
                 {statusMeta.label}
+              </span>
+            )}
+            {quality && (
+              <span
+                style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: quality.bg,
+                  color: quality.fg,
+                  padding: '2px 9px',
+                  borderRadius: 20,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                }}
+                title={`${quality.label} (${quality.score}/100)`}
+              >
+                {quality.short}
               </span>
             )}
           </div>
