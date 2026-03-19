@@ -60,36 +60,95 @@ export default async function handler(req, res) {
       Origin: origin,
     }
 
-    let imgRes = await fetch(imageUrl, {
-      headers: commonHeaders,
-      redirect: 'follow',
-      cache: 'no-store',
-    })
+    const candidates = []
+    const pushCandidate = (v) => {
+      if (!v || typeof v !== 'string') return
+      candidates.push(v)
+    }
+    try {
+      const u = new URL(imageUrl)
+      pushCandidate(u.toString())
 
-    // Retry with a simpler Referer if the first attempt was rejected.
-    if (!imgRes.ok && (imgRes.status === 403 || imgRes.status === 429)) {
-      imgRes = await fetch(imageUrl, {
-        headers: { ...commonHeaders, Referer: 'https://www.instagram.com/' },
-        redirect: 'follow',
-        cache: 'no-store',
-      })
+      // Try removing query string entirely (some CDN assets are accessible without the signed params).
+      const noQuery = new URL(u.toString())
+      noQuery.search = ''
+      pushCandidate(noQuery.toString())
+
+      // Try keeping only signature-ish params that look stable.
+      const keepSig = new URL(u.toString())
+      for (const [k] of keepSig.searchParams.entries()) {
+        if (k !== 'oh' && k !== 'oe') keepSig.searchParams.delete(k)
+      }
+      pushCandidate(keepSig.toString())
+
+      // Try removing stp if present (square crop forcing param).
+      const rmStp = new URL(u.toString())
+      rmStp.searchParams.delete('stp')
+      pushCandidate(rmStp.toString())
+
+      // Try upscaling s640x640 paths if present.
+      const upscale = u.pathname.replace(/\/s\d+x\d+\//i, '/s1080x1080/')
+      if (upscale !== u.pathname) {
+        const up = new URL(u.toString())
+        up.pathname = upscale
+        pushCandidate(up.toString())
+      }
+    } catch {
+      pushCandidate(imageUrl)
     }
 
-    if (!imgRes.ok) {
-      const contentType = imgRes.headers.get('content-type') || ''
+    // Deduplicate while preserving order.
+    const uniqueCandidates = []
+    for (const c of candidates) {
+      if (!uniqueCandidates.includes(c)) uniqueCandidates.push(c)
+    }
+
+    let imgRes = null
+    let lastRes = null
+    for (const candidateUrl of uniqueCandidates) {
+      try {
+        let resTry = await fetch(candidateUrl, {
+          headers: commonHeaders,
+          redirect: 'follow',
+          cache: 'no-store',
+        })
+
+        // Retry with a simpler Referer if the first attempt was rejected.
+        if (!resTry.ok && (resTry.status === 403 || resTry.status === 429)) {
+          resTry = await fetch(candidateUrl, {
+            headers: { ...commonHeaders, Referer: 'https://www.instagram.com/' },
+            redirect: 'follow',
+            cache: 'no-store',
+          })
+        }
+
+        lastRes = resTry
+        if (resTry.ok) {
+          imgRes = resTry
+          break
+        }
+      } catch (e) {
+        lastRes = null
+      }
+    }
+
+    if (!imgRes || !imgRes.ok) {
+      const contentType = lastRes?.headers?.get('content-type') || ''
       let snippet = null
       try {
         // If Instagram returns HTML for blocks/throttling, surface a tiny snippet.
         if (contentType.includes('text') || contentType.includes('json') || contentType.includes('html')) {
-          snippet = (await imgRes.text()).slice(0, 300)
+          snippet = lastRes ? (await lastRes.text()).slice(0, 300) : null
         }
       } catch {}
 
       return res.status(500).json({
         error: 'Could not fetch image',
-        status: imgRes.status,
+        status: lastRes?.status,
         contentType,
         snippet,
+        // Helpful for debugging: show what URL variant ultimately failed.
+        tried: uniqueCandidates.slice(0, 6),
       })
     }
 
