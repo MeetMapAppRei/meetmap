@@ -116,6 +116,11 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
           {event.time && <span> · {event.time}</span>}
           {event.host && <span style={{ color: isLight ? '#666' : '#555' }}> · {event.host}</span>}
         </div>
+        {event.latest_update_message && (
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#D1491A' : '#FF8A5C', marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            📣 {event.latest_update_message}
+          </div>
+        )}
 
         {event.tags?.length > 0 && (
           <div style={{ marginBottom: 8 }}>

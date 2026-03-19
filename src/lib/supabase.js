@@ -56,6 +56,27 @@ const upsertEventStatus = async (eventId, status = 'active', statusNote = '') =>
   if (error) throw error
 }
 
+const fetchLatestEventUpdateMap = async (eventIds) => {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
+  const { data, error } = await supabase
+    .from('event_updates')
+    .select('id, event_id, message, created_at')
+    .in('event_id', eventIds)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const map = {}
+  for (const row of data || []) {
+    if (!map[row.event_id]) {
+      map[row.event_id] = {
+        latest_update_id: row.id,
+        latest_update_message: row.message || '',
+        latest_update_created_at: row.created_at || '',
+      }
+    }
+  }
+  return map
+}
+
 export const fetchEventStatuses = async (eventIds) => {
   if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
   const { data, error } = await supabase
@@ -72,6 +93,25 @@ export const fetchEventStatuses = async (eventIds) => {
     }
   }
   return map
+}
+
+export const fetchLatestEventUpdates = async (eventIds) => {
+  return fetchLatestEventUpdateMap(eventIds)
+}
+
+export const createEventUpdate = async (eventId, userId, message) => {
+  if (!eventId || !userId || !String(message || '').trim()) throw new Error('Missing event update data')
+  const { data, error } = await supabase
+    .from('event_updates')
+    .insert([{
+      event_id: eventId,
+      user_id: userId,
+      message: String(message).trim(),
+    }])
+    .select('id, event_id, message, created_at')
+    .single()
+  if (error) throw error
+  return data
 }
 
 // ═══ EVENTS ══════════════════════════════════════════════════
@@ -104,13 +144,24 @@ export const fetchEvents = async (filters = {}) => {
   const rows = data || []
   try {
     const statusMap = await fetchEventStatusMap(rows.map(e => e.id))
+    const updateMap = await fetchLatestEventUpdateMap(rows.map(e => e.id))
     return rows.map(e => ({
       ...e,
       status: statusMap[e.id]?.status || 'active',
       status_note: statusMap[e.id]?.status_note || '',
+      latest_update_id: updateMap[e.id]?.latest_update_id || '',
+      latest_update_message: updateMap[e.id]?.latest_update_message || '',
+      latest_update_created_at: updateMap[e.id]?.latest_update_created_at || '',
     }))
   } catch {
-    return rows.map(e => ({ ...e, status: 'active', status_note: '' }))
+    return rows.map(e => ({
+      ...e,
+      status: 'active',
+      status_note: '',
+      latest_update_id: '',
+      latest_update_message: '',
+      latest_update_created_at: '',
+    }))
   }
 }
 
@@ -126,7 +177,14 @@ export const createEvent = async (eventData, userId) => {
   try {
     await upsertEventStatus(data.id, status, statusNote)
   } catch {}
-  return { ...data, status, status_note: statusNote }
+  return {
+    ...data,
+    status,
+    status_note: statusNote,
+    latest_update_id: '',
+    latest_update_message: '',
+    latest_update_created_at: '',
+  }
 }
 
 export const updateEvent = async (eventId, updates) => {
@@ -154,7 +212,12 @@ export const updateEvent = async (eventId, updates) => {
       finalStatusNote = ''
     }
   }
-  return { ...data, status: finalStatus, status_note: finalStatusNote }
+  let latest = { latest_update_id: '', latest_update_message: '', latest_update_created_at: '' }
+  try {
+    const updateMap = await fetchLatestEventUpdateMap([eventId])
+    latest = updateMap[eventId] || latest
+  } catch {}
+  return { ...data, status: finalStatus, status_note: finalStatusNote, ...latest }
 }
 
 // ═══ FLYER IMPORTS (approval queue) ═══════════════════════

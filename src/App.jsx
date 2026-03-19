@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents, fetchEventStatuses } from './lib/supabase'
+import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents, fetchEventStatuses, fetchLatestEventUpdates } from './lib/supabase'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
@@ -31,6 +31,8 @@ const getSavedEventsStorageKey = (user) => `meetmap:saved-events:${user?.id || '
 const getReminderLogStorageKey = (user) => `meetmap:sent-reminders:${user?.id || 'anon'}`
 const getStatusSnapshotStorageKey = (user) => `meetmap:status-snapshot:${user?.id || 'anon'}`
 const getStatusNotifiedStorageKey = (user) => `meetmap:status-notified:${user?.id || 'anon'}`
+const getUpdateSnapshotStorageKey = (user) => `meetmap:update-snapshot:${user?.id || 'anon'}`
+const getUpdateNotifiedStorageKey = (user) => `meetmap:update-notified:${user?.id || 'anon'}`
 
 const eventStartMs = (event) => {
   if (!event?.date) return null
@@ -299,6 +301,62 @@ function AppInner() {
         window.localStorage.setItem(reminderLogKey, JSON.stringify(reminderLog))
       } catch {}
     }
+  }, [notificationPermission, savedEventIds, events, user])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (notificationPermission !== 'granted') return
+    if (!savedEventIds.length) return
+
+    const snapshotKey = getUpdateSnapshotStorageKey(user)
+    const notifiedKey = getUpdateNotifiedStorageKey(user)
+
+    const checkUpdateChanges = async () => {
+      try {
+        const updateMap = await fetchLatestEventUpdates(savedEventIds)
+        let snapshot = {}
+        let notified = {}
+        try {
+          snapshot = JSON.parse(window.localStorage.getItem(snapshotKey) || '{}') || {}
+          notified = JSON.parse(window.localStorage.getItem(notifiedKey) || '{}') || {}
+        } catch {
+          snapshot = {}
+          notified = {}
+        }
+
+        const nextSnapshot = {}
+        const nextNotified = { ...notified }
+        const hasBaseline = Object.keys(snapshot).length > 0
+
+        for (const eventId of savedEventIds) {
+          const row = updateMap[eventId]
+          const signature = row
+            ? `${row.latest_update_id || ''}|${row.latest_update_message || ''}|${row.latest_update_created_at || ''}`
+            : ''
+          const previous = snapshot[eventId] || ''
+
+          if (hasBaseline && signature && previous !== signature && nextNotified[eventId] !== signature) {
+            const eventTitle = events.find(e => e.id === eventId)?.title || 'Saved event'
+            new window.Notification(`New host update: ${eventTitle}`, {
+              body: row.latest_update_message || 'The host posted a new update.',
+              icon: '/og-image.svg',
+            })
+            nextNotified[eventId] = signature
+          }
+
+          nextSnapshot[eventId] = signature
+        }
+
+        window.localStorage.setItem(snapshotKey, JSON.stringify(nextSnapshot))
+        window.localStorage.setItem(notifiedKey, JSON.stringify(nextNotified))
+      } catch (e) {
+        console.error('Host update notification check failed:', e)
+      }
+    }
+
+    checkUpdateChanges()
+    const interval = window.setInterval(checkUpdateChanges, 90 * 1000)
+    return () => window.clearInterval(interval)
   }, [notificationPermission, savedEventIds, events, user])
 
   useEffect(() => {

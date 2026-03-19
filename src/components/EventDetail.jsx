@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchComments, postComment, toggleAttendance, getAttendanceStatus, updateEvent, uploadEventPhoto, supabase } from '../lib/supabase'
+import { fetchComments, postComment, toggleAttendance, getAttendanceStatus, updateEvent, uploadEventPhoto, supabase, createEventUpdate } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 
@@ -204,10 +204,13 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   const [attending, setAttending] = useState(false)
   const [attendeeCount, setAttendeeCount] = useState(initialEvent.attendee_count || 0)
   const [posting, setPosting] = useState(false)
+  const [postingUpdate, setPostingUpdate] = useState(false)
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [updateMessage, setUpdateMessage] = useState('')
+  const [updateError, setUpdateError] = useState('')
   const bottomRef = useRef()
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
@@ -276,6 +279,30 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
       document.body.removeChild(el)
       setCopied(true)
       setTimeout(() => setCopied(false), 2500)
+    }
+  }
+
+  const handlePostUpdate = async () => {
+    const message = updateMessage.trim()
+    if (!message) return
+    if (!user) return onAuthNeeded()
+    setPostingUpdate(true)
+    setUpdateError('')
+    try {
+      const row = await createEventUpdate(event.id, user.id, message)
+      const updatedEvent = {
+        ...event,
+        latest_update_id: row.id,
+        latest_update_message: row.message,
+        latest_update_created_at: row.created_at,
+      }
+      setEvent(updatedEvent)
+      onUpdated?.(updatedEvent)
+      setUpdateMessage('')
+    } catch (e) {
+      setUpdateError(e.message || 'Failed to post update')
+    } finally {
+      setPostingUpdate(false)
     }
   }
 
@@ -379,6 +406,12 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
               {event.description}
             </p>
           )}
+          {event.latest_update_message && (
+            <div style={{ marginBottom: 14, border: `1px solid ${isLight ? '#F0C3B3' : '#3A241C'}`, background: isLight ? '#FFF3ED' : '#1A110D', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: isLight ? '#D1491A' : '#FF8A5C', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Host update</div>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: isLight ? '#444' : '#D8D8D8', lineHeight: 1.5 }}>{event.latest_update_message}</div>
+            </div>
+          )}
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
@@ -431,7 +464,25 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
 
           {/* Owner controls: Edit + Delete */}
           {isOwner && (
-            <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <input
+                  value={updateMessage}
+                  onChange={e => setUpdateMessage(e.target.value)}
+                  placeholder="Post update for saved attendees..."
+                  maxLength={220}
+                  style={{ flex: 1, background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 8, padding: '8px 10px', color: isLight ? '#222' : '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 12, outline: 'none' }}
+                />
+                <button
+                  onClick={handlePostUpdate}
+                  disabled={postingUpdate || !updateMessage.trim()}
+                  style={{ background: postingUpdate || !updateMessage.trim() ? '#333' : '#FF6B35', color: postingUpdate || !updateMessage.trim() ? '#666' : '#0A0A0A', border: 'none', borderRadius: 8, padding: '0 12px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 0.8, cursor: postingUpdate || !updateMessage.trim() ? 'default' : 'pointer' }}
+                >
+                  {postingUpdate ? 'POSTING...' : 'POST UPDATE'}
+                </button>
+              </div>
+              {updateError && <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#FF7A7A', marginBottom: 8 }}>{updateError}</div>}
+              <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={() => setEditing(true)}
                 style={{ flex: 1, background: '#141414', color: '#888', border: '1px solid #222', borderRadius: 10, padding: '10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1, cursor: 'pointer' }}
@@ -452,6 +503,7 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
                   <button onClick={handleDelete} disabled={deleting} style={{ background: '#FF3535', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, cursor: 'pointer' }}>{deleting ? '...' : 'YES'}</button>
                 </div>
               )}
+              </div>
             </div>
           )}
         </div>
