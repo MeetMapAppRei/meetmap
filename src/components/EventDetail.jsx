@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
+import { getAppOrigin } from '../lib/apiOrigin'
 import ReportEventModal from './ReportEventModal'
 
 const TYPE_COLORS = {
@@ -276,7 +277,7 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   }
 
   const handleShare = async () => {
-    const url = `${window.location.origin}?event=${event.id}`
+    const url = `${getAppOrigin()}?event=${event.id}`
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true)

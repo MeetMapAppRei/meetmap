@@ -788,7 +788,8 @@ function AppInner() {
       <div style={{
         background: isLight ? '#F6F6F6' : '#0A0A0A',
         borderBottom: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
-        padding: '14px 18px 10px', position: 'sticky', top: 0, zIndex: 100,
+        padding: 'calc(env(safe-area-inset-top) + 14px) 18px 10px',
+        position: 'sticky', top: 0, zIndex: 100,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', rowGap: 8 }}>
           <div>

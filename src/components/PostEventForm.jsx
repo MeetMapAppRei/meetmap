@@ -125,6 +125,9 @@ export default function PostEventForm({ onClose, onPosted }) {
   const handleFlyerUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
+    // Reuse the flyer as the event photo so users don't need a second upload.
+    setPhoto(file)
+    setPhotoPreview(URL.createObjectURL(file))
     setScanning(true)
     setError('')
     setFlyerSuccess(false)
