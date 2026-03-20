@@ -1027,7 +1027,7 @@ function AppInner() {
           </button>
         </div>
 
-        {nearMeError && nearMeOnly && (
+        {nearMeError && (
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#FF9944', marginTop: 6 }}>
             {nearMeError}
           </div>
