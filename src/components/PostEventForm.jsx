@@ -187,7 +187,6 @@ export default function PostEventForm({ onClose, onPosted }) {
     const required = [
       { key: 'title', label: 'Event Name' },
       { key: 'date', label: 'Date' },
-      { key: 'location', label: 'Venue / Spot Name' },
       { key: 'city', label: 'City, State' },
     ]
     const missing = required.filter(f => !String(form[f.key] || '').trim())
@@ -202,9 +201,11 @@ export default function PostEventForm({ onClose, onPosted }) {
       let finalCoords = coords
       if (form.address && !finalCoords) finalCoords = await geocodeAddress(form.address).catch(() => null)
       const tagsArray = form.tags.split(',').map(t => t.trim()).filter(Boolean)
+      const safeLocation = String(form.location || '').trim() || String(form.city || '').trim()
       const eventPayload = {
         title: form.title, type: form.type, date: form.date, time: form.time,
-        location: form.location, city: form.city, address: form.address, description: form.description,
+        // DB requires location, so if it's omitted we safely fall back to city.
+        location: safeLocation, city: form.city, address: form.address, description: form.description,
         tags: tagsArray, host: form.host,
         lat: finalCoords?.lat || null, lng: finalCoords?.lng || null,
         user_id: user.id,
@@ -303,7 +304,7 @@ export default function PostEventForm({ onClose, onPosted }) {
           {!geocoding && addressStatus === 'notfound' && <span style={{ color: '#FF9944' }}>⚠️ Address not found — try adding city and state</span>}
         </div>
 
-        <label style={labelStyle}>Venue / Spot Name *</label>
+        <label style={labelStyle}>Venue / Spot Name (optional)</label>
         <input
           style={{ ...inputStyle, borderColor: missingFields.includes('location') ? '#FF6060' : inputStyle.border }}
           placeholder="Walmart East Lot, AutoZone Parking"
