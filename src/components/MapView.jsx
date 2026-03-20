@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 
 // 👇 STEP 2: Replace with your Mapbox public token
 // Found at: mapbox.com → Account → Access Tokens
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
+// Public token fallback keeps mobile builds working even when .env injection fails.
+const MAPBOX_TOKEN = String(
+  import.meta.env.VITE_MAPBOX_TOKEN ||
+  'pk.eyJ1IjoiY2FybWVldGFwcCIsImEiOiJjbW1vemY0NWwwaWo2MnBvazEwcXN3eGl3In0.VzSvHEV_lIfm67HuFw1Cow'
+).trim()
 const TYPE_COLORS = {
   meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
 }
 
-export default function MapView({ events, onSelectEvent, centerOn }) {
+export default function MapView({ events, onSelectEvent, centerOn, bottomNavHeight = 110 }) {
   const mapContainer = useRef(null)
   const map = useRef(null)
   const markersRef = useRef([])
@@ -16,6 +20,10 @@ export default function MapView({ events, onSelectEvent, centerOn }) {
 
   useEffect(() => {
     if (map.current || !mapContainer.current) return
+    if (!MAPBOX_TOKEN || MAPBOX_TOKEN === 'YOUR_MAPBOX_PUBLIC_TOKEN') {
+      setMapboxError(true)
+      return
+    }
 
     // Dynamically load Mapbox GL JS
     const link = document.createElement('link')
@@ -26,7 +34,10 @@ export default function MapView({ events, onSelectEvent, centerOn }) {
     const script = document.createElement('script')
     script.src = 'https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js'
     script.onload = () => {
-      if (!window.mapboxgl) return
+      if (!window.mapboxgl) {
+        setMapboxError(true)
+        return
+      }
       window.mapboxgl.accessToken = MAPBOX_TOKEN
 
       map.current = new window.mapboxgl.Map({
@@ -100,14 +111,14 @@ export default function MapView({ events, onSelectEvent, centerOn }) {
     })
   }, [events, mapLoaded, onSelectEvent])
 
-  if (mapboxError || MAPBOX_TOKEN === 'YOUR_MAPBOX_PUBLIC_TOKEN') {
+  if (mapboxError || !MAPBOX_TOKEN || MAPBOX_TOKEN === 'YOUR_MAPBOX_PUBLIC_TOKEN') {
     return (
       <FallbackMap events={events} onSelectEvent={onSelectEvent} />
     )
   }
 
   return (
-    <div style={{ position: 'relative', height: 'calc(100vh - 175px)' }}>
+    <div style={{ position: 'relative', height: `calc(100vh - 175px - ${bottomNavHeight}px - env(safe-area-inset-bottom))` }}>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
       {!mapLoaded && (
         <div style={{
@@ -134,7 +145,7 @@ function FallbackMap({ events, onSelectEvent }) {
 
   return (
     <div style={{
-      height: 'calc(100vh - 175px)', background: '#0D0D0D',
+      height: `calc(100vh - 175px - 110px - env(safe-area-inset-bottom))`, background: '#0D0D0D',
       position: 'relative', overflow: 'hidden',
     }}>
       <div style={{

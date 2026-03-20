@@ -87,6 +87,7 @@ function AppInner() {
   const [nearMeOnly, setNearMeOnly] = useState(false)
   const [nearMeCoords, setNearMeCoords] = useState(null)
   const [nearMeError, setNearMeError] = useState('')
+  const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
 
   // Prevent triggering Supabase queries on every keystroke.
   useEffect(() => {
@@ -1040,13 +1041,22 @@ function AppInner() {
             events={eventsForDisplay}
             onSelectEvent={e => { setMapSelected(e); setSelectedEvent(e) }}
             centerOn={nearMeOnly ? nearMeCoords : null}
+            bottomNavHeight={BOTTOM_NAV_HEIGHT}
           />
         </div>
       )}
 
       {/* ── LIST VIEW ── */}
       {view === 'list' && (
-        <div className="fade-up" style={{ padding: '12px 16px 110px' }}>
+        <div
+          className="fade-up"
+          style={{
+            paddingLeft: 16,
+            paddingRight: 16,
+            paddingTop: 12,
+            paddingBottom: `calc(${BOTTOM_NAV_HEIGHT}px + env(safe-area-inset-bottom))`,
+          }}
+        >
           {loading ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: '#333' }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>⚙️</div>
@@ -1102,7 +1112,7 @@ function AppInner() {
 
       {/* ── BOTTOM NAV ── */}
       <div style={{
-        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        position: 'fixed', bottom: 'env(safe-area-inset-bottom)', left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 480, background: isLight ? '#F6F6F6' : '#0A0A0A',
         borderTop: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`, display: 'flex',
         justifyContent: 'space-around', padding: '10px 0 20px', zIndex: 200,
