@@ -7,6 +7,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:mobile": "vite build",
+    "android:bump-version": "node scripts/bump-android-version.mjs",
+    "release:android": "node scripts/bump-android-version.mjs && npm run build:mobile && npx cap sync android",
     "cap:sync": "npm run build:mobile && npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios"
