@@ -5,6 +5,7 @@ import { useTheme } from '../lib/ThemeContext'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'
+import { geocodeAddress } from '../lib/geocode'
 import ReportEventModal from './ReportEventModal'
 
 const TYPE_COLORS = {
@@ -25,13 +26,6 @@ const S = {
   label: { fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#555', letterSpacing: 1, display: 'block', marginBottom: 5, textTransform: 'uppercase' },
   input: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark' },
   select: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark', appearance: 'none' },
-}
-
-async function geocodeAddress(address) {
-  const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`)
-  const data = await res.json()
-  if (!data.length) return null
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
 }
 
 function EditForm({ event, onSaved, onCancel }) {

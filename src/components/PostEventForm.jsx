@@ -3,6 +3,7 @@ import { createEvent, uploadEventPhoto } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { apiUrl } from '../lib/apiOrigin'
+import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 
 const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 600, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
@@ -12,15 +13,7 @@ const S = {
   select: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark', appearance: 'none' },
 }
 
-async function geocodeAddress(address) {
-  const encoded = encodeURIComponent(address)
-  const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`)
-  const data = await res.json()
-  if (data.length === 0) return null
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
-}
-
-async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
+async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
   const response = await fetch(apiUrl('/api/extract-flyer'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -58,6 +51,24 @@ async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
     throw new Error(`No extracted data returned (status ${status}, content-type "${contentType}"). Response: ${preview}`)
   }
   return data.extracted
+}
+
+async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
+  const maxAttempts = 3
+  let lastErr
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      if (i > 0) await new Promise((r) => setTimeout(r, 750 * i))
+      return await extractFlyerInfoOnce(imageBase64, mediaType)
+    } catch (e) {
+      lastErr = e
+      const msg = e?.message || ''
+      const retryable = /failed to fetch|networkerror|load failed|network request failed/i.test(msg)
+      if (retryable && i < maxAttempts - 1) continue
+      throw e
+    }
+  }
+  throw lastErr
 }
 
 export default function PostEventForm({ onClose, onPosted }) {
@@ -162,13 +173,22 @@ export default function PostEventForm({ onClose, onPosted }) {
         tags: info.tags || prev.tags,
       }))
       setFlyerSuccess(true)
-      // Auto-geocode if address was found
+      // Auto-geocode after import — failures must not look like "flyer failed" (see green success banner).
       if (info.address) {
-        const result = await geocodeAddress(info.address)
-        if (result) { setCoords(result); setAddressStatus('found') }
+        try {
+          const result = await geocodeAddress(info.address)
+          if (result) {
+            setCoords(result)
+            setAddressStatus('found')
+          } else {
+            setAddressStatus('notfound')
+          }
+        } catch {
+          setAddressStatus('error')
+        }
       }
     } catch (e) {
-      const msg = e?.message || (typeof e === 'string' ? e : String(e))
+      const msg = humanizeFetchError(e) || (typeof e === 'string' ? e : String(e))
       setError(msg || 'Could not read flyer. Try a clearer image or fill in manually.')
     } finally {
       setScanning(false)
@@ -182,7 +202,9 @@ export default function PostEventForm({ onClose, onPosted }) {
       const result = await geocodeAddress(form.address)
       if (result) { setCoords(result); setAddressStatus('found') }
       else setAddressStatus('notfound')
-    } catch { setAddressStatus('error') }
+    } catch {
+      setAddressStatus('error')
+    }
     finally { setGeocoding(false) }
   }
 
@@ -221,7 +243,9 @@ export default function PostEventForm({ onClose, onPosted }) {
         created.photo_url = photoUrl
       }
       onPosted(created); onClose()
-    } catch (e) { setError(e.message) }
+    } catch (e) {
+      setError(humanizeFetchError(e))
+    }
     finally { setLoading(false) }
   }
 
@@ -301,10 +325,15 @@ export default function PostEventForm({ onClose, onPosted }) {
           onChange={e => { set('address', e.target.value); setAddressStatus(''); setCoords(null) }}
           onBlur={handleAddressBlur}
         />
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, marginBottom: 12, height: 16 }}>
+        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, marginBottom: 12, minHeight: 16 }}>
           {geocoding && <span style={{ color: geocodeText }}>🔍 Looking up address...</span>}
           {!geocoding && addressStatus === 'found' && <span style={{ color: '#FF6B35' }}>✓ Address found — pin will appear on map</span>}
           {!geocoding && addressStatus === 'notfound' && <span style={{ color: '#FF9944' }}>⚠️ Address not found — try adding city and state</span>}
+          {!geocoding && addressStatus === 'error' && (
+            <span style={{ color: '#FF9944' }}>
+              ⚠️ Couldn’t verify address on the map (connection issue). Tap the address field and tap away to retry.
+            </span>
+          )}
         </div>
 
         <label style={labelStyle}>Venue / Spot Name (optional)</label>

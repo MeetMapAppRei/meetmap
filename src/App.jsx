@@ -10,6 +10,7 @@ import MapView from './components/MapView'
 import ImportQueueModal from './components/ImportQueueModal'
 import ModerationQueueModal from './components/ModerationQueueModal'
 import { apiUrl } from './lib/apiOrigin'
+import { geocodeAddress } from './lib/geocode'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -200,14 +201,6 @@ function AppInner() {
     const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
-  }
-
-  async function geocodeAddress(address) {
-    if (!address || !address.trim()) return null
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`)
-    const data = await res.json()
-    if (!data.length) return null
-    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
   }
 
   const handleToggleSaved = async (eventId) => {
