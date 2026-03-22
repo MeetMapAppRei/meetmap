@@ -5,6 +5,9 @@
     },
     "api/extract-flyer.js": {
       "maxDuration": 30
+    },
+    "api/storage-presign.js": {
+      "maxDuration": 15
     }
   }
 }

@@ -356,7 +356,7 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
         {/* Hero image or color band */}
         {event.photo_url ? (
           <div style={{ position: 'relative', height: 320, background: isLight ? '#F2F2F2' : '#0B0B0B' }}>
-            <img src={event.photo_url} style={{ width: '100%', height: '100%', objectFit: 'contain', background: isLight ? '#F2F2F2' : '#0B0B0B' }} alt={event.title} />
+            <img src={event.photo_url} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain', background: isLight ? '#F2F2F2' : '#0B0B0B' }} alt={event.title} />
             <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: closeBg, border: 'none', color: closeColor, fontSize: 22, width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
           </div>
         ) : (

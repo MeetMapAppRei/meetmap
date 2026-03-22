@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { compressImageForUpload } from './compressImageForUpload'
+import { apiUrl } from './apiOrigin'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
 // Important: fallback must be valid for your Supabase project.
@@ -325,10 +327,65 @@ export const updateFlyerImport = async (importId, updates) => {
   return data
 }
 
+function useR2Storage() {
+  return import.meta.env.VITE_USE_R2_STORAGE === 'true'
+}
+
+/** Browser PUT to R2 using Vercel-issued presigned URL (secrets stay on server). */
+async function uploadImageViaR2Presign(file, body) {
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Sign in to upload photos')
+
+  const pres = await fetch(apiUrl('/api/storage-presign'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  })
+  const json = await pres.json().catch(() => ({}))
+  if (!pres.ok) {
+    throw new Error(json.error || `Presign failed (${pres.status})`)
+  }
+  const { uploadUrl, publicUrl } = json
+  if (!uploadUrl || !publicUrl) throw new Error('Invalid presign response')
+
+  const put = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: file,
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+  })
+  if (!put.ok) {
+    const t = await put.text().catch(() => '')
+    throw new Error(`Upload failed (${put.status}) ${t.slice(0, 120)}`)
+  }
+  return publicUrl
+}
+
 export const uploadEventPhoto = async (file, eventId) => {
-  const ext = file.name.split('.').pop()
-  const path = `events/${eventId}/${Date.now()}.${ext}`
-  const { error } = await supabase.storage.from('event-photos').upload(path, file)
+  const ready = await compressImageForUpload(file)
+  const ext = (ready.name.split('.').pop() || 'jpg').toLowerCase()
+  const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg'
+  const contentType = ready.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`
+
+  if (useR2Storage()) {
+    return uploadImageViaR2Presign(ready, {
+      folder: 'events',
+      eventId,
+      fileExt: safeExt,
+      contentType,
+    })
+  }
+
+  const path = `events/${eventId}/${Date.now()}.${safeExt}`
+  const { error } = await supabase.storage.from('event-photos').upload(path, ready, {
+    contentType,
+    upsert: false,
+  })
   if (error) throw error
   const { data } = supabase.storage.from('event-photos').getPublicUrl(path)
   return data.publicUrl
@@ -337,12 +394,24 @@ export const uploadEventPhoto = async (file, eventId) => {
 export const uploadFlyerImportImage = async (file, userId) => {
   if (!file) throw new Error('Missing file')
   if (!userId) throw new Error('Missing userId')
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+  const ready = await compressImageForUpload(file)
+  const ext = (ready.name.split('.').pop() || 'jpg').toLowerCase()
   const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg'
+  const contentType = ready.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`
+
+  if (useR2Storage()) {
+    return uploadImageViaR2Presign(ready, {
+      folder: 'flyer-imports',
+      userId,
+      fileExt: safeExt,
+      contentType,
+    })
+  }
+
   const path = `flyer-imports/${userId}/${Date.now()}.${safeExt}`
-  const { error } = await supabase.storage.from('event-photos').upload(path, file, {
+  const { error } = await supabase.storage.from('event-photos').upload(path, ready, {
     upsert: false,
-    contentType: file.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`,
+    contentType,
   })
   if (error) throw error
   const { data } = supabase.storage.from('event-photos').getPublicUrl(path)

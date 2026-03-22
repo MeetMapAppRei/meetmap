@@ -9,11 +9,14 @@
     "build:mobile": "vite build",
     "android:bump-version": "node scripts/bump-android-version.mjs",
     "release:android": "node scripts/bump-android-version.mjs && npm run build:mobile && npx cap sync android",
+    "migrate:images:r2": "node scripts/migrate-supabase-images-to-r2.mjs",
     "cap:sync": "npm run build:mobile && npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.750.0",
+    "@aws-sdk/s3-request-presigner": "^3.750.0",
     "@capacitor/core": "^6.2.0",
     "@supabase/supabase-js": "^2.43.0",
     "react": "^18.3.1",
