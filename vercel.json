@@ -8,6 +8,9 @@
     },
     "api/storage-presign.js": {
       "maxDuration": 15
+    },
+    "api/storage-health.js": {
+      "maxDuration": 10
     }
   }
 }
