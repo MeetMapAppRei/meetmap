@@ -328,7 +328,12 @@ export const updateFlyerImport = async (importId, updates) => {
 }
 
 function useR2Storage() {
-  return import.meta.env.VITE_USE_R2_STORAGE === 'true'
+  const v = import.meta.env.VITE_USE_R2_STORAGE
+  if (v === true) return true
+  const s = String(v ?? '')
+    .trim()
+    .toLowerCase()
+  return s === 'true' || s === '1' || s === 'yes'
 }
 
 /** Browser PUT to R2 using Vercel-issued presigned URL (secrets stay on server). */
