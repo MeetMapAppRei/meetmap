@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { compressImageForUpload } from './compressImageForUpload'
-import { apiUrl } from './apiOrigin'
+import { apiUrl, apiUrlCandidates } from './apiOrigin'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
 // Important: fallback must be valid for your Supabase project.
@@ -342,17 +342,31 @@ async function uploadImageViaR2Presign(file, body) {
   const token = session?.access_token
   if (!token) throw new Error('Sign in to upload photos')
 
-  const pres = await fetch(apiUrl('/api/storage-presign'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  })
-  const json = await pres.json().catch(() => ({}))
-  if (!pres.ok) {
-    throw new Error(json.error || `Presign failed (${pres.status})`)
+  const presignUrls = apiUrlCandidates('/api/storage-presign')
+  let json = {}
+  let lastPresignErr = null
+  for (const url of presignUrls) {
+    try {
+      const pres = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      })
+      const j = await pres.json().catch(() => ({}))
+      if (pres.ok && j?.uploadUrl && j?.publicUrl && j?.key) {
+        json = j
+        break
+      }
+      lastPresignErr = new Error(j.error || `Presign failed (${pres.status})`)
+    } catch (e) {
+      lastPresignErr = e
+    }
+  }
+  if (!json?.uploadUrl) {
+    throw lastPresignErr || new Error('Could not reach upload service. Try again.')
   }
   const { uploadUrl, publicUrl, key } = json
   if (!uploadUrl || !publicUrl || !key) throw new Error('Invalid presign response')
@@ -370,7 +384,7 @@ async function uploadImageViaR2Presign(file, body) {
       throw new Error(`Upload failed (${put.status}) ${t.slice(0, 120)}`)
     }
   } catch (err) {
-    // Mobile WebView CORS quirks: fallback to server-side upload via same-origin API.
+    // Mobile WebView CORS quirks: fallback to server-side upload via API (try multiple hosts).
     const base64Data = await new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => {
@@ -385,22 +399,33 @@ async function uploadImageViaR2Presign(file, body) {
       reader.onerror = reject
       reader.readAsDataURL(file)
     })
-    const relay = await fetch(apiUrl('/api/storage-upload'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        key,
-        contentType: file.type || 'application/octet-stream',
-        base64Data,
-      }),
+    const relayPayload = JSON.stringify({
+      key,
+      contentType: file.type || 'application/octet-stream',
+      base64Data,
     })
-    const relayJson = await relay.json().catch(() => ({}))
-    if (!relay.ok) {
-      throw new Error(relayJson.error || err?.message || `Upload relay failed (${relay.status})`)
+    const relayUrls = apiUrlCandidates('/api/storage-upload')
+    let lastRelayErr = err
+    for (const relayUrl of relayUrls) {
+      try {
+        const relay = await fetch(relayUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: relayPayload,
+        })
+        const relayJson = await relay.json().catch(() => ({}))
+        if (relay.ok) {
+          return publicUrl
+        }
+        lastRelayErr = new Error(relayJson.error || `Upload relay failed (${relay.status})`)
+      } catch (e) {
+        lastRelayErr = e
+      }
     }
+    throw lastRelayErr instanceof Error ? lastRelayErr : new Error(String(lastRelayErr))
   }
   return publicUrl
 }

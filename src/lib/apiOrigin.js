@@ -23,3 +23,22 @@ export function apiUrl(path) {
   const origin = getAppOrigin()
   return origin ? `${origin}${p}` : p
 }
+
+/**
+ * Ordered URLs to try for serverless APIs (presign, relay upload, etc.).
+ * Android WebView + custom domain can hit a host that is missing a route; fall back to known deploys.
+ * @param {string} path e.g. `/api/storage-presign`
+ * @returns {string[]}
+ */
+export function apiUrlCandidates(path) {
+  const p = path.startsWith('/') ? path : `/${path}`
+  const primary = apiUrl(p)
+  const bases = [
+    primary.startsWith('http') ? primary : null,
+    typeof window !== 'undefined' && primary.startsWith('/') ? `${window.location.origin}${primary}` : null,
+    'https://findcarmeets.com',
+    'https://www.findcarmeets.com',
+    'https://meetmap-gilt.vercel.app',
+  ].filter(Boolean)
+  return [...new Set(bases)]
+}
