@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createEvent, uploadEventPhoto } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
@@ -8,14 +8,20 @@ import { compressImageForUpload } from '../lib/compressImageForUpload'
 
 function isTransientNetworkError(e) {
   const m = String(e?.message || e?.error_description || e?.cause?.message || e || '')
-  return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504/i.test(m)
+  // Supabase / fetch / WebView often surface as TypeError, empty body, or gateway errors.
+  return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504|econnreset|etimedout|socket|connection refused|fetch/i.test(
+    m,
+  )
 }
 
-async function withNetworkRetries(fn, attempts = 3) {
+async function withNetworkRetries(fn, attempts = 5) {
   let last
   for (let i = 0; i < attempts; i++) {
     try {
-      if (i > 0) await new Promise((r) => setTimeout(r, 500 * i))
+      if (i > 0) {
+        const jitter = Math.floor(Math.random() * 400)
+        await new Promise((r) => setTimeout(r, 600 * i + jitter))
+      }
       return await fn()
     } catch (e) {
       last = e
@@ -35,7 +41,7 @@ const S = {
 
 async function postExtractFlyer(endpoint, imageBase64, mediaType = "image/jpeg") {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timeout = controller ? setTimeout(() => controller.abort(), 25000) : null
+  const timeout = controller ? setTimeout(() => controller.abort(), 35000) : null
   let response
   try {
     response = await fetch(endpoint, {
@@ -114,7 +120,7 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
 }
 
 async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
-  const maxAttempts = 3
+  const maxAttempts = 4
   let lastErr
   for (let i = 0; i < maxAttempts; i++) {
     try {
@@ -147,6 +153,18 @@ export default function PostEventForm({ onClose, onPosted }) {
   const [missingFields, setMissingFields] = useState([])
   const [addressStatus, setAddressStatus] = useState('')
   const [flyerSuccess, setFlyerSuccess] = useState(false)
+
+  // Warm serverless routes (reduces first-request cold-start failures on mobile web).
+  useEffect(() => {
+    const urls = Array.from(
+      new Set(
+        [apiUrl('/api/storage-health'), 'https://meetmap-gilt.vercel.app/api/storage-health'].filter(Boolean),
+      ),
+    )
+    urls.forEach((u) => {
+      fetch(u, { method: 'GET', cache: 'no-store', credentials: 'omit' }).catch(() => {})
+    })
+  }, [])
 
   const overlayStyle = { ...S.overlay, background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background }
   const sheetStyle = {
@@ -285,7 +303,9 @@ export default function PostEventForm({ onClose, onPosted }) {
     setError(''); setLoading(true)
     try {
       let finalCoords = coords
-      if (form.address && !finalCoords) finalCoords = await geocodeAddress(form.address).catch(() => null)
+      if (form.address && !finalCoords) {
+        finalCoords = await withNetworkRetries(() => geocodeAddress(form.address, { retries: 2 })).catch(() => null)
+      }
       const tagsArray = form.tags.split(',').map(t => t.trim()).filter(Boolean)
       const safeLocation = String(form.location || '').trim() || String(form.city || '').trim()
       const eventPayload = {
@@ -296,14 +316,15 @@ export default function PostEventForm({ onClose, onPosted }) {
         lat: finalCoords?.lat || null, lng: finalCoords?.lng || null,
         user_id: user.id,
       }
-      const created = await withNetworkRetries(() => createEvent(eventPayload, user.id))
+      const created = await withNetworkRetries(() => createEvent(eventPayload, user.id), 5)
       if (photo) {
         await withNetworkRetries(async () => {
           const photoUrl = await uploadEventPhoto(photo, created.id)
           const { supabase } = await import('../lib/supabase')
-          await supabase.from('events').update({ photo_url: photoUrl }).eq('id', created.id)
+          const { error: upErr } = await supabase.from('events').update({ photo_url: photoUrl }).eq('id', created.id)
+          if (upErr) throw upErr
           created.photo_url = photoUrl
-        })
+        }, 5)
       }
       onPosted(created); onClose()
     } catch (e) {
