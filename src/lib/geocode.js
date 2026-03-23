@@ -43,9 +43,18 @@ export async function geocodeAddress(address, options = {}) {
 
 /** User-facing message when fetch / network fails */
 export function humanizeFetchError(err) {
-  const msg = err?.message || (typeof err === 'string' ? err : String(err))
+  const type = String(err?.type || '')
+  const name = String(err?.name || '')
+  const rawMsg = err?.message || (typeof err === 'string' ? err : String(err))
+  const msg = String(rawMsg || '').trim()
+  if (/\[object ProgressEvent\]/i.test(msg) || /progress/i.test(type) || /progress/i.test(name)) {
+    return 'Connection problem. Check your signal and try again.'
+  }
+  if (/aborterror|timeout/i.test(name) || /abort|timeout/i.test(msg)) {
+    return 'Connection timed out. Please try again.'
+  }
   if (/failed to fetch|networkerror|load failed|network request failed/i.test(msg)) {
     return 'Connection problem. Check your signal and try again.'
   }
-  return msg
+  return msg || 'Something went wrong. Please try again.'
 }

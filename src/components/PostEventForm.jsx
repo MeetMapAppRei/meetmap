@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
+import { compressImageForUpload } from '../lib/compressImageForUpload'
 
 const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 600, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
@@ -13,16 +14,55 @@ const S = {
   select: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark', appearance: 'none' },
 }
 
-async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
-  const response = await fetch(apiUrl('/api/extract-flyer'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      imageBase64,
-      mediaType,
-    }),
-  })
+async function postExtractFlyer(endpoint, imageBase64, mediaType = "image/jpeg") {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timeout = controller ? setTimeout(() => controller.abort(), 25000) : null
+  let response
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64,
+        mediaType,
+      }),
+      signal: controller?.signal,
+    })
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+  return response
+}
 
+async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
+  const candidates = [
+    apiUrl('/api/extract-flyer'),
+    'https://findcarmeets.com/api/extract-flyer',
+    'https://meetmap-gilt.vercel.app/api/extract-flyer',
+  ]
+  const endpoints = Array.from(new Set(candidates.filter(Boolean)))
+  let response = null
+  let lastNetworkError = null
+
+  for (const endpoint of endpoints) {
+    try {
+      response = await postExtractFlyer(endpoint, imageBase64, mediaType)
+      // If endpoint responded at all, parse result (even if non-200) and stop trying others.
+      break
+    } catch (e) {
+      lastNetworkError = e
+      const msg = String(e?.message || '')
+      const retryableNetwork = /failed to fetch|networkerror|load failed|network request failed|abort|timeout/i.test(msg)
+      if (!retryableNetwork) throw e
+    }
+  }
+
+  if (!response) {
+    throw lastNetworkError || new Error('Connection problem while reading flyer.')
+  }
+
+  const responseUrl = response.url || ''
+  const isFallback = responseUrl.includes('findcarmeets.com') || responseUrl.includes('meetmap-gilt.vercel.app')
   const status = response.status
   const statusText = response.statusText
   const contentType = response.headers.get('content-type') || ''
@@ -39,9 +79,10 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
       data?.error?.message ||
       data?.error ||
       data?.message ||
+      (status === 413 ? 'Flyer image is too large. Try a smaller/cropped image.' : '') ||
       statusText ||
       `Request failed (${status})`
-    throw new Error(err)
+    throw new Error(isFallback ? `${err}` : err)
   }
 
   if (!('extracted' in (data || {})) || data?.extracted == null) {
@@ -63,7 +104,7 @@ async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
     } catch (e) {
       lastErr = e
       const msg = e?.message || ''
-      const retryable = /failed to fetch|networkerror|load failed|network request failed/i.test(msg)
+      const retryable = /failed to fetch|networkerror|load failed|network request failed|timeout|abort/i.test(msg)
       if (retryable && i < maxAttempts - 1) continue
       throw e
     }
@@ -143,19 +184,20 @@ export default function PostEventForm({ onClose, onPosted }) {
     setError('')
     setFlyerSuccess(false)
     try {
-      // The backend has a 10MB body size limit, and base64 inflates payload size.
-      // This catches the most common emulator/large-file case early with a clear message.
-      if (file.size > 8 * 1024 * 1024) {
+      // The backend has a request body limit, and base64 inflates payload size.
+      // Compress first for better mobile reliability.
+      const aiFile = await compressImageForUpload(file, { maxWidth: 1400, quality: 0.8 })
+      if (aiFile.size > 8 * 1024 * 1024) {
         throw new Error('That flyer file is too large for AI extraction on mobile. Try a smaller/cropped image (under ~8MB).')
       }
 
       // Convert to base64
-      const mediaType = file.type || 'image/jpeg'
+      const mediaType = aiFile.type || file.type || 'image/jpeg'
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result.split(',')[1])
         reader.onerror = reject
-        reader.readAsDataURL(file)
+        reader.readAsDataURL(aiFile)
       })
       const info = await extractFlyerInfo(base64, mediaType)
       // Fill in the form with extracted info
