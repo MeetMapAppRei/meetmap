@@ -9,7 +9,7 @@ export function getAppOrigin() {
   if (raw == null || String(raw).trim() === '') {
     // Capacitor builds can occasionally miss injected env values; keep API calls
     // pointed at the deployed backend instead of falling back to local app HTML.
-    return 'https://meetmap-gilt.vercel.app'
+    return 'https://findcarmeets.com'
   }
   return String(raw).replace(/\/$/, '')
 }
