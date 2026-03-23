@@ -142,6 +142,8 @@ export default function PostEventForm({ onClose, onPosted }) {
   const { isLight } = useTheme()
   const fileRef = useRef()
   const flyerRef = useRef()
+  /** Blocks double-submit before React re-renders disabled={loading}. */
+  const submitGuardRef = useRef(false)
   const [form, setForm] = useState({ title: '', type: 'meet', date: '', time: '', location: '', city: '', address: '', description: '', tags: '', host: '' })
   const [coords, setCoords] = useState(null)
   const [photo, setPhoto] = useState(null)
@@ -330,7 +332,10 @@ export default function PostEventForm({ onClose, onPosted }) {
     } catch (e) {
       setError(humanizeFetchError(e))
     }
-    finally { setLoading(false) }
+    finally {
+      setLoading(false)
+      submitGuardRef.current = false
+    }
   }
 
   return (
@@ -474,22 +479,23 @@ export default function PostEventForm({ onClose, onPosted }) {
         />
 
         <button
+          type="button"
           onClick={handleSubmit}
-          disabled={loading}
+          disabled={loading || scanning}
           style={{
             width: '100%',
-            background: loading ? (isLight ? '#E5E5E5' : '#333') : '#FF6B35',
-            color: loading ? (isLight ? '#666' : '#666') : '#0A0A0A',
+            background: loading || scanning ? (isLight ? '#E5E5E5' : '#333') : '#FF6B35',
+            color: loading || scanning ? (isLight ? '#666' : '#666') : '#0A0A0A',
             border: 'none',
             borderRadius: 10,
             padding: 14,
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: 20,
             letterSpacing: 2,
-            cursor: loading ? 'default' : 'pointer',
+            cursor: loading || scanning ? 'default' : 'pointer',
           }}
         >
-          {loading ? 'POSTING...' : 'DROP THE PIN 📍'}
+          {loading ? 'POSTING...' : scanning ? 'READING FLYER...' : 'DROP THE PIN 📍'}
         </button>
       </div>
     </div>
