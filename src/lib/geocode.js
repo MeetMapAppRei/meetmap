@@ -25,6 +25,8 @@ export async function geocodeAddress(address, options = {}) {
       const res = await fetch(url, {
         headers: {
           Accept: 'application/json',
+          // Nominatim requires a valid User-Agent identifying the app (usage policy).
+          'User-Agent': 'MeetMap/1.0 (+https://findcarmeets.com)',
         },
       })
       if (!res.ok) {
@@ -45,7 +47,11 @@ export async function geocodeAddress(address, options = {}) {
 export function humanizeFetchError(err) {
   const type = String(err?.type || '')
   const name = String(err?.name || '')
-  const rawMsg = err?.message || (typeof err === 'string' ? err : String(err))
+  const rawMsg =
+    err?.message ||
+    err?.error_description ||
+    err?.cause?.message ||
+    (typeof err === 'string' ? err : String(err))
   const msg = String(rawMsg || '').trim()
   if (/\[object ProgressEvent\]/i.test(msg) || /progress/i.test(type) || /progress/i.test(name)) {
     return 'Connection problem. Check your signal and try again.'

@@ -6,6 +6,25 @@ import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { compressImageForUpload } from '../lib/compressImageForUpload'
 
+function isTransientNetworkError(e) {
+  const m = String(e?.message || e?.error_description || e?.cause?.message || e || '')
+  return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504/i.test(m)
+}
+
+async function withNetworkRetries(fn, attempts = 3) {
+  let last
+  for (let i = 0; i < attempts; i++) {
+    try {
+      if (i > 0) await new Promise((r) => setTimeout(r, 500 * i))
+      return await fn()
+    } catch (e) {
+      last = e
+      if (!isTransientNetworkError(e) || i === attempts - 1) throw e
+    }
+  }
+  throw last
+}
+
 const S = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 600, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
   sheet: { width: '100%', maxWidth: 480, background: '#0F0F0F', borderRadius: '20px 20px 0 0', border: '1px solid #1A1A1A', maxHeight: '92vh', overflowY: 'auto', padding: '24px 20px 48px', animation: 'slideUp 0.3s ease' },
@@ -277,12 +296,14 @@ export default function PostEventForm({ onClose, onPosted }) {
         lat: finalCoords?.lat || null, lng: finalCoords?.lng || null,
         user_id: user.id,
       }
-      const created = await createEvent(eventPayload, user.id)
+      const created = await withNetworkRetries(() => createEvent(eventPayload, user.id))
       if (photo) {
-        const photoUrl = await uploadEventPhoto(photo, created.id)
-        const { supabase } = await import('../lib/supabase')
-        await supabase.from('events').update({ photo_url: photoUrl }).eq('id', created.id)
-        created.photo_url = photoUrl
+        await withNetworkRetries(async () => {
+          const photoUrl = await uploadEventPhoto(photo, created.id)
+          const { supabase } = await import('../lib/supabase')
+          await supabase.from('events').update({ photo_url: photoUrl }).eq('id', created.id)
+          created.photo_url = photoUrl
+        })
       }
       onPosted(created); onClose()
     } catch (e) {
