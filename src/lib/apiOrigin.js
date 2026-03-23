@@ -7,9 +7,12 @@
 export function getAppOrigin() {
   const raw = import.meta.env.VITE_APP_ORIGIN
   if (raw == null || String(raw).trim() === '') {
-    // Capacitor builds can occasionally miss injected env values; keep API calls
-    // pointed at the deployed backend instead of falling back to local app HTML.
-    return 'https://findcarmeets.com'
+    // Web should use same-origin API routes.
+    // Capacitor can miss injected env values, so keep a safe production fallback there.
+    if (typeof window !== 'undefined' && window?.Capacitor) {
+      return 'https://findcarmeets.com'
+    }
+    return ''
   }
   return String(raw).replace(/\/$/, '')
 }
