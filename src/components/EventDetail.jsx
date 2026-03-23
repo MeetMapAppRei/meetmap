@@ -271,9 +271,26 @@ export default function EventDetail({ event: initialEvent, saved = false, onTogg
   }
 
   const handleShare = async () => {
-    const url = `${getAppOrigin()}?event=${event.id}`
+    let shareBase = getAppOrigin()
+    if (!shareBase) {
+      try {
+        shareBase = window.location.origin
+      } catch {
+        shareBase = 'https://findcarmeets.com'
+      }
+    }
+    const normalized = String(shareBase).replace(/\/$/, '')
+    const url = `${normalized}/?event=${event.id}`
     try {
-      await navigator.clipboard.writeText(url)
+      if (navigator.share) {
+        await navigator.share({
+          title: event.title || 'Meet Map event',
+          text: event.title || 'Check out this event on Meet Map',
+          url,
+        })
+      } else {
+        await navigator.clipboard.writeText(url)
+      }
       setCopied(true)
       setTimeout(() => setCopied(false), 2500)
     } catch {
