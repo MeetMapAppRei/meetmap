@@ -354,19 +354,53 @@ async function uploadImageViaR2Presign(file, body) {
   if (!pres.ok) {
     throw new Error(json.error || `Presign failed (${pres.status})`)
   }
-  const { uploadUrl, publicUrl } = json
-  if (!uploadUrl || !publicUrl) throw new Error('Invalid presign response')
+  const { uploadUrl, publicUrl, key } = json
+  if (!uploadUrl || !publicUrl || !key) throw new Error('Invalid presign response')
 
-  const put = await fetch(uploadUrl, {
-    method: 'PUT',
-    body: file,
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-    },
-  })
-  if (!put.ok) {
-    const t = await put.text().catch(() => '')
-    throw new Error(`Upload failed (${put.status}) ${t.slice(0, 120)}`)
+  try {
+    const put = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+    })
+    if (!put.ok) {
+      const t = await put.text().catch(() => '')
+      throw new Error(`Upload failed (${put.status}) ${t.slice(0, 120)}`)
+    }
+  } catch (err) {
+    // Mobile WebView CORS quirks: fallback to server-side upload via same-origin API.
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          const result = String(reader.result || '')
+          const comma = result.indexOf(',')
+          resolve(comma >= 0 ? result.slice(comma + 1) : '')
+        } catch (e) {
+          reject(e)
+        }
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+    const relay = await fetch(apiUrl('/api/storage-upload'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        key,
+        contentType: file.type || 'application/octet-stream',
+        base64Data,
+      }),
+    })
+    const relayJson = await relay.json().catch(() => ({}))
+    if (!relay.ok) {
+      throw new Error(relayJson.error || err?.message || `Upload relay failed (${relay.status})`)
+    }
   }
   return publicUrl
 }

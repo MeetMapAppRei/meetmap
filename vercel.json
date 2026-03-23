@@ -9,6 +9,9 @@
     "api/storage-presign.js": {
       "maxDuration": 15
     },
+    "api/storage-upload.js": {
+      "maxDuration": 20
+    },
     "api/storage-health.js": {
       "maxDuration": 10
     }
