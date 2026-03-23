@@ -48,6 +48,9 @@ const eventStartMs = (event) => {
 function AppInner() {
   const { user, loading: authLoading } = useAuth()
   const { toggleTheme, isLight } = useTheme()
+  const filterChipBg = isLight ? '#F2F2F2' : '#1A1A1A'
+  const filterChipBorder = isLight ? '#E5E5E5' : '#2A2A2A'
+  const filterChipText = isLight ? '#4A4A4A' : '#A8A8A8'
   const canAccessImports = isImportAdminUser(user)
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -917,9 +920,9 @@ function AppInner() {
           <button
             onClick={() => setFilterType('all')}
             style={{
-              background: filterType === 'all' ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
-              color: filterType === 'all' ? '#0A0A0A' : '#666',
-              border: '1px solid', borderColor: filterType === 'all' ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
+              background: filterType === 'all' ? '#FF6B35' : filterChipBg,
+              color: filterType === 'all' ? '#0A0A0A' : filterChipText,
+              border: '1px solid', borderColor: filterType === 'all' ? '#FF6B35' : filterChipBorder,
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -935,9 +938,9 @@ function AppInner() {
               else requestNearMe()
             }}
             style={{
-              background: nearMeOnly ? '#333' : isLight ? '#F2F2F2' : '#111',
-              color: nearMeOnly ? '#aaa' : '#444',
-              border: '1px solid', borderColor: nearMeOnly ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
+              background: nearMeOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
+              color: nearMeOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
+              border: '1px solid', borderColor: nearMeOnly ? '#FF6B35' : filterChipBorder,
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -954,9 +957,9 @@ function AppInner() {
               key={type}
               onClick={() => setFilterType(type)}
               style={{
-                background: filterType === type ? '#FF6B35' : isLight ? '#F2F2F2' : '#111',
-                color: filterType === type ? '#0A0A0A' : '#666',
-                border: '1px solid', borderColor: filterType === type ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
+                background: filterType === type ? '#FF6B35' : filterChipBg,
+                color: filterType === type ? '#0A0A0A' : filterChipText,
+                border: '1px solid', borderColor: filterType === type ? '#FF6B35' : filterChipBorder,
                 borderRadius: 20, padding: '5px 13px',
                 fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
                 cursor: 'pointer', textTransform: 'capitalize',
@@ -970,9 +973,9 @@ function AppInner() {
           <button
             onClick={() => setShowPast(p => !p)}
             style={{
-              background: showPast ? '#333' : isLight ? '#F2F2F2' : '#111',
+              background: showPast ? '#333' : filterChipBg,
               color: showPast ? '#aaa' : '#444',
-              border: '1px solid', borderColor: showPast ? '#444' : isLight ? '#E5E5E5' : '#1A1A1A',
+              border: '1px solid', borderColor: showPast ? '#444' : filterChipBorder,
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -983,9 +986,9 @@ function AppInner() {
           <button
             onClick={() => setShowSavedOnly(p => !p)}
             style={{
-              background: showSavedOnly ? '#26140E' : isLight ? '#F2F2F2' : '#111',
+              background: showSavedOnly ? '#26140E' : filterChipBg,
               color: showSavedOnly ? '#FF8A5C' : '#444',
-              border: '1px solid', borderColor: showSavedOnly ? '#FF6B35' : isLight ? '#E5E5E5' : '#1A1A1A',
+              border: '1px solid', borderColor: showSavedOnly ? '#FF6B35' : filterChipBorder,
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -996,9 +999,9 @@ function AppInner() {
           <button
             onClick={() => setShowCanceled(p => !p)}
             style={{
-              background: showCanceled ? '#2A1010' : isLight ? '#F2F2F2' : '#111',
+              background: showCanceled ? '#2A1010' : filterChipBg,
               color: showCanceled ? '#FF7A7A' : '#444',
-              border: '1px solid', borderColor: showCanceled ? '#FF6060' : isLight ? '#E5E5E5' : '#1A1A1A',
+              border: '1px solid', borderColor: showCanceled ? '#FF6060' : filterChipBorder,
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
@@ -1009,9 +1012,9 @@ function AppInner() {
           <button
             onClick={() => setShowGoingOnly(p => !p)}
             style={{
-              background: showGoingOnly ? '#0F2412' : isLight ? '#F2F2F2' : '#111',
+              background: showGoingOnly ? '#0F2412' : filterChipBg,
               color: showGoingOnly ? '#9BFF8E' : '#444',
-              border: '1px solid', borderColor: showGoingOnly ? '#7CFF6B' : isLight ? '#E5E5E5' : '#1A1A1A',
+              border: '1px solid', borderColor: showGoingOnly ? '#7CFF6B' : filterChipBorder,
               borderRadius: 20, padding: '5px 13px',
               fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
               cursor: 'pointer',
