@@ -32,6 +32,18 @@ const normalizeStatus = (value) => {
   return ['active', 'moved', 'delayed', 'canceled'].includes(v) ? v : 'active'
 }
 
+const DUPLICATE_EVENT_MESSAGE = 'An event with the same title, date, and city already exists. Please edit the existing event instead.'
+
+const mapCreateEventError = (error) => {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '')
+  const details = String(error?.details || '')
+  if (code === '23505' || /events_title_date_city_unique/i.test(message) || /events_title_date_city_unique/i.test(details)) {
+    return new Error(DUPLICATE_EVENT_MESSAGE)
+  }
+  return error
+}
+
 const fetchEventStatusMap = async (eventIds) => {
   if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
   const { data, error } = await supabase
@@ -198,7 +210,7 @@ export const createEvent = async (eventData, userId) => {
     .insert([{ ...eventData, user_id: userId }])
     .select('id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)')
     .single()
-  if (error) throw error
+  if (error) throw mapCreateEventError(error)
   const status = normalizeStatus(eventData?.status)
   const statusNote = eventData?.status_note || ''
   try {
