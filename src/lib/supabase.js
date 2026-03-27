@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { compressImageForUpload } from './compressImageForUpload'
 import { apiUrl, apiUrlCandidates } from './apiOrigin'
+import { eventsLikelyDuplicatePair } from './eventDedupe'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
 // Important: fallback must be valid for your Supabase project.
 // Using the project's anon public key prevents "Invalid API key" in builds where env vars aren't injected.
 const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'sb_publishable_WQTdt-GLFcEBE681slkTGQ_y3W5ZQHt'
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WQTdt-GLFcEBE681slkTGQ_y3W5ZQHt'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
@@ -20,8 +20,7 @@ export const signUp = (email, password, username) =>
     options: { data: { username } },
   })
 
-export const signIn = (email, password) =>
-  supabase.auth.signInWithPassword({ email, password })
+export const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password })
 
 export const signOut = () => supabase.auth.signOut()
 
@@ -32,16 +31,83 @@ const normalizeStatus = (value) => {
   return ['active', 'moved', 'delayed', 'canceled'].includes(v) ? v : 'active'
 }
 
-const DUPLICATE_EVENT_MESSAGE = 'An event with the same title, date, and city already exists. Please edit the existing event instead.'
+const DUPLICATE_EVENT_MESSAGE = 'An event with the same title, date, and city already exists.'
 
 const mapCreateEventError = (error) => {
   const code = String(error?.code || '')
   const message = String(error?.message || '')
   const details = String(error?.details || '')
-  if (code === '23505' || /events_title_date_city_unique/i.test(message) || /events_title_date_city_unique/i.test(details)) {
+  const blob = `${message} ${details}`
+  if (
+    code === '23505' ||
+    /events_title_date_city_unique|events_title_date_place_unique|events_title_date_unique/i.test(
+      blob,
+    )
+  ) {
     return new Error(DUPLICATE_EVENT_MESSAGE)
   }
   return error
+}
+
+/**
+ * After a unique violation, the row may still exist if the first request committed but the client only saw a connection error.
+ * If this user's event on that date matches the same dedupe key, treat the create as succeeded.
+ */
+const fetchOwnEventRowMatchingDedupe = async (eventData, userId) => {
+  const date = eventData?.date
+  if (!date || !userId) return null
+  const dateKey = String(date).slice(0, 10)
+  const { data: rows, error } = await supabase
+    .from('events')
+    .select(
+      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
+    )
+    .eq('date', dateKey)
+    .eq('user_id', userId)
+    .limit(80)
+  if (error || !rows?.length) return null
+  const match = rows.find((r) => eventsLikelyDuplicatePair(r, eventData))
+  return match || null
+}
+
+const finalizeCreatedEvent = async (data, eventData) => {
+  const status = normalizeStatus(eventData?.status)
+  const statusNote = eventData?.status_note || ''
+  try {
+    await upsertEventStatus(data.id, status, statusNote)
+  } catch {}
+  return {
+    ...data,
+    status,
+    status_note: statusNote,
+    latest_update_id: '',
+    latest_update_message: '',
+    latest_update_created_at: '',
+    interested_count: 0,
+    going_count: 0,
+  }
+}
+
+/**
+ * If the DB unique index is missing or bypassed, inserts could still duplicate. Scan same-day rows first.
+ * Any match → show duplicate message (including your own listing, so a deliberate re-post is not silent).
+ * After a connection timeout, insert may still return 23505: we then recover in createEvent without this message.
+ */
+const tryResolveDuplicateBeforeInsert = async (eventData, userId) => {
+  const date = eventData?.date
+  if (!date || !userId) return null
+  const dateKey = String(date).slice(0, 10)
+  const { data: rows, error } = await supabase
+    .from('events')
+    .select(
+      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
+    )
+    .eq('date', dateKey)
+    .limit(500)
+  if (error || !rows?.length) return null
+  const dup = rows.find((r) => eventsLikelyDuplicatePair(r, eventData))
+  if (dup) throw new Error(DUPLICATE_EVENT_MESSAGE)
+  return null
 }
 
 const fetchEventStatusMap = async (eventIds) => {
@@ -63,14 +129,17 @@ const fetchEventStatusMap = async (eventIds) => {
 
 const upsertEventStatus = async (eventId, status = 'active', statusNote = '') => {
   if (!eventId) return
-  const { error } = await supabase
-    .from('event_statuses')
-    .upsert([{
-      event_id: eventId,
-      status: normalizeStatus(status),
-      status_note: statusNote || null,
-      updated_at: new Date().toISOString(),
-    }], { onConflict: 'event_id' })
+  const { error } = await supabase.from('event_statuses').upsert(
+    [
+      {
+        event_id: eventId,
+        status: normalizeStatus(status),
+        status_note: statusNote || null,
+        updated_at: new Date().toISOString(),
+      },
+    ],
+    { onConflict: 'event_id' },
+  )
   if (error) throw error
 }
 
@@ -134,14 +203,17 @@ export const fetchLatestEventUpdates = async (eventIds) => {
 }
 
 export const createEventUpdate = async (eventId, userId, message) => {
-  if (!eventId || !userId || !String(message || '').trim()) throw new Error('Missing event update data')
+  if (!eventId || !userId || !String(message || '').trim())
+    throw new Error('Missing event update data')
   const { data, error } = await supabase
     .from('event_updates')
-    .insert([{
-      event_id: eventId,
-      user_id: userId,
-      message: String(message).trim(),
-    }])
+    .insert([
+      {
+        event_id: eventId,
+        user_id: userId,
+        message: String(message).trim(),
+      },
+    ])
     .select('id, event_id, message, created_at')
     .single()
   if (error) throw error
@@ -154,7 +226,9 @@ export const fetchEvents = async (filters = {}) => {
   let query = supabase
     .from('events')
     // Explicitly include `address` so the UI can always display the full street address.
-    .select('id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)')
+    .select(
+      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
+    )
     .order('date', { ascending: true })
 
   if (filters.type && filters.type !== 'all') {
@@ -163,7 +237,7 @@ export const fetchEvents = async (filters = {}) => {
 
   if (filters.search) {
     query = query.or(
-      `title.ilike.%${filters.search}%,city.ilike.%${filters.search}%,tags.cs.{${filters.search}}`
+      `title.ilike.%${filters.search}%,city.ilike.%${filters.search}%,tags.cs.{${filters.search}}`,
     )
   }
 
@@ -177,10 +251,10 @@ export const fetchEvents = async (filters = {}) => {
   if (error) throw error
   const rows = data || []
   try {
-    const statusMap = await fetchEventStatusMap(rows.map(e => e.id))
-    const updateMap = await fetchLatestEventUpdateMap(rows.map(e => e.id))
-    const rsvpMap = await fetchEventRsvpStatsMap(rows.map(e => e.id))
-    return rows.map(e => ({
+    const statusMap = await fetchEventStatusMap(rows.map((e) => e.id))
+    const updateMap = await fetchLatestEventUpdateMap(rows.map((e) => e.id))
+    const rsvpMap = await fetchEventRsvpStatsMap(rows.map((e) => e.id))
+    return rows.map((e) => ({
       ...e,
       status: statusMap[e.id]?.status || 'active',
       status_note: statusMap[e.id]?.status_note || '',
@@ -191,7 +265,7 @@ export const fetchEvents = async (filters = {}) => {
       going_count: rsvpMap[e.id]?.going_count || 0,
     }))
   } catch {
-    return rows.map(e => ({
+    return rows.map((e) => ({
       ...e,
       status: 'active',
       status_note: '',
@@ -205,27 +279,24 @@ export const fetchEvents = async (filters = {}) => {
 }
 
 export const createEvent = async (eventData, userId) => {
+  const resolved = await tryResolveDuplicateBeforeInsert(eventData, userId)
+  if (resolved) return resolved
+
   const { data, error } = await supabase
     .from('events')
     .insert([{ ...eventData, user_id: userId }])
-    .select('id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)')
+    .select(
+      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
+    )
     .single()
-  if (error) throw mapCreateEventError(error)
-  const status = normalizeStatus(eventData?.status)
-  const statusNote = eventData?.status_note || ''
-  try {
-    await upsertEventStatus(data.id, status, statusNote)
-  } catch {}
-  return {
-    ...data,
-    status,
-    status_note: statusNote,
-    latest_update_id: '',
-    latest_update_message: '',
-    latest_update_created_at: '',
-    interested_count: 0,
-    going_count: 0,
+  if (error) {
+    if (String(error.code) === '23505') {
+      const existing = await fetchOwnEventRowMatchingDedupe(eventData, userId)
+      if (existing) return finalizeCreatedEvent(existing, eventData)
+    }
+    throw mapCreateEventError(error)
   }
+  return finalizeCreatedEvent(data, eventData)
 }
 
 export const updateEvent = async (eventId, updates) => {
@@ -234,7 +305,9 @@ export const updateEvent = async (eventId, updates) => {
     .from('events')
     .update(eventUpdates)
     .eq('id', eventId)
-    .select('id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)')
+    .select(
+      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
+    )
     .single()
   if (error) throw error
   let finalStatus = normalizeStatus(status)
@@ -272,7 +345,9 @@ export const updateEvent = async (eventId, updates) => {
 export const fetchFlyerImports = async (userId, status = 'pending') => {
   const { data, error } = await supabase
     .from('flyer_imports')
-    .select('id, user_id, source_url, image_url, status, extracted, title, type, date, time, location, city, address, host, description, tags, created_at')
+    .select(
+      'id, user_id, source_url, image_url, status, extracted, title, type, date, time, location, city, address, host, description, tags, created_at',
+    )
     .eq('user_id', userId)
     .eq('status', status)
     .order('created_at', { ascending: false })
@@ -295,7 +370,8 @@ export const createFlyerImport = async ({ userId, sourceUrl, imageUrl, extracted
   if (existingErr) throw existingErr
   if (existing) return existing
 
-  const tagsArray = extracted?.tags && Array.isArray(extracted.tags) ? extracted.tags : extracted?.tags || []
+  const tagsArray =
+    extracted?.tags && Array.isArray(extracted.tags) ? extracted.tags : extracted?.tags || []
   const payload = {
     user_id: userId,
     source_url: sourceUrl,
@@ -310,9 +386,19 @@ export const createFlyerImport = async ({ userId, sourceUrl, imageUrl, extracted
     address: extracted?.address || null,
     host: extracted?.host || null,
     description: extracted?.description || null,
-    tags: typeof tagsArray === 'string' ? tagsArray.split(',').map(t => t.trim()).filter(Boolean) : tagsArray,
+    tags:
+      typeof tagsArray === 'string'
+        ? tagsArray
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : tagsArray,
   }
-  const { data, error } = await supabase.from('flyer_imports').insert([payload]).select('*').single()
+  const { data, error } = await supabase
+    .from('flyer_imports')
+    .insert([payload])
+    .select('*')
+    .single()
   if (error) throw error
   return data
 }
@@ -339,7 +425,7 @@ export const updateFlyerImport = async (importId, updates) => {
   return data
 }
 
-function useR2Storage() {
+function isR2StorageEnabled() {
   const v = import.meta.env.VITE_USE_R2_STORAGE
   if (v === true) return true
   const s = String(v ?? '')
@@ -350,7 +436,9 @@ function useR2Storage() {
 
 /** Browser PUT to R2 using Vercel-issued presigned URL (secrets stay on server). */
 async function uploadImageViaR2Presign(file, body) {
-  const { data: { session } } = await supabase.auth.getSession()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
   const token = session?.access_token
   if (!token) throw new Error('Sign in to upload photos')
 
@@ -443,12 +531,13 @@ async function uploadImageViaR2Presign(file, body) {
 }
 
 export const uploadEventPhoto = async (file, eventId) => {
-  const ready = await compressImageForUpload(file)
+  // Event photos are shown frequently in list/detail views; reduce upload size for mobile reliability.
+  const ready = await compressImageForUpload(file, { maxWidth: 1000, quality: 0.72 })
   const ext = (ready.name.split('.').pop() || 'jpg').toLowerCase()
   const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg'
   const contentType = ready.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`
 
-  if (useR2Storage()) {
+  if (isR2StorageEnabled()) {
     return uploadImageViaR2Presign(ready, {
       folder: 'events',
       eventId,
@@ -475,7 +564,7 @@ export const uploadFlyerImportImage = async (file, userId) => {
   const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg'
   const contentType = ready.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`
 
-  if (useR2Storage()) {
+  if (isR2StorageEnabled()) {
     return uploadImageViaR2Presign(ready, {
       folder: 'flyer-imports',
       userId,
@@ -568,7 +657,8 @@ export const setEventRsvp = async (eventId, userId, status) => {
   } catch {
     if (status === 'going') {
       const attending = await getAttendanceStatus(eventId, userId).catch(() => false)
-      if (!attending) await supabase.from('event_attendees').insert([{ event_id: eventId, user_id: userId }])
+      if (!attending)
+        await supabase.from('event_attendees').insert([{ event_id: eventId, user_id: userId }])
       return 'going'
     }
     return 'interested'
@@ -612,7 +702,7 @@ export const fetchSavedEventIds = async (userId) => {
     .select('event_id')
     .eq('user_id', userId)
   if (error) throw error
-  return (data || []).map(row => row.event_id).filter(Boolean)
+  return (data || []).map((row) => row.event_id).filter(Boolean)
 }
 
 export const setSavedEventStatus = async (userId, eventId, shouldSave) => {
@@ -620,7 +710,10 @@ export const setSavedEventStatus = async (userId, eventId, shouldSave) => {
   if (shouldSave) {
     const { error } = await supabase
       .from('saved_events')
-      .upsert([{ user_id: userId, event_id: eventId }], { onConflict: 'user_id,event_id', ignoreDuplicates: true })
+      .upsert([{ user_id: userId, event_id: eventId }], {
+        onConflict: 'user_id,event_id',
+        ignoreDuplicates: true,
+      })
     if (error) throw error
     return true
   }
@@ -635,12 +728,83 @@ export const setSavedEventStatus = async (userId, eventId, shouldSave) => {
 
 export const upsertSavedEvents = async (userId, eventIds) => {
   if (!userId || !Array.isArray(eventIds) || eventIds.length === 0) return
-  const rows = eventIds.filter(Boolean).map(eventId => ({ user_id: userId, event_id: eventId }))
+  const rows = eventIds.filter(Boolean).map((eventId) => ({ user_id: userId, event_id: eventId }))
   if (rows.length === 0) return
   const { error } = await supabase
     .from('saved_events')
     .upsert(rows, { onConflict: 'user_id,event_id', ignoreDuplicates: true })
   if (error) throw error
+}
+
+export const upsertDevicePushToken = async ({ userId, token, platform = 'android' }) => {
+  const safeToken = String(token || '').trim()
+  const safePlatform = String(platform || '')
+    .trim()
+    .toLowerCase()
+  if (!userId || !safeToken || !safePlatform) return null
+
+  const { data, error } = await supabase
+    .from('device_push_tokens')
+    .upsert(
+      [
+        {
+          user_id: userId,
+          token: safeToken,
+          platform: safePlatform,
+          active: true,
+          last_seen_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: 'token' },
+    )
+    .select('id, user_id, token, platform, active, updated_at')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export const setDevicePushTokenActive = async (token, active) => {
+  const safeToken = String(token || '').trim()
+  if (!safeToken) return null
+  const { data, error } = await supabase
+    .from('device_push_tokens')
+    .update({
+      active: !!active,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('token', safeToken)
+    .select('id, active, updated_at')
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+export const fetchNotificationPreferences = async (userId) => {
+  if (!userId) return null
+  const { data, error } = await supabase
+    .from('user_notification_preferences')
+    .select('user_id, reminders_enabled, event_updates_enabled, created_at, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+export const upsertNotificationPreferences = async (userId, prefs = {}) => {
+  if (!userId) return null
+  const payload = {
+    user_id: userId,
+    reminders_enabled: prefs.reminders_enabled !== false,
+    event_updates_enabled: prefs.event_updates_enabled !== false,
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('user_notification_preferences')
+    .upsert([payload], { onConflict: 'user_id' })
+    .select('user_id, reminders_enabled, event_updates_enabled, created_at, updated_at')
+    .single()
+  if (error) throw error
+  return data
 }
 
 // ═══ EVENT REPORTS (moderation queue) ═══════════════════════
@@ -652,7 +816,14 @@ export const createEventReport = async (eventId, reporterUserId, reason, details
 
   const { data, error } = await supabase
     .from('event_reports')
-    .insert([{ event_id: eventId, reporter_user_id: reporterUserId, reason: safeReason, details: safeDetails || null }])
+    .insert([
+      {
+        event_id: eventId,
+        reporter_user_id: reporterUserId,
+        reason: safeReason,
+        details: safeDetails || null,
+      },
+    ])
     .select('id, event_id, reason, details, status, created_at')
     .single()
 
@@ -664,7 +835,9 @@ export const fetchEventReports = async (status = 'pending') => {
   try {
     const { data, error } = await supabase
       .from('event_reports')
-      .select('id, event_id, reason, details, status, created_at, review_note, reviewed_at, reporter_user_id, profiles(username, avatar_url), events(title, type, date, location, city, photo_url)')
+      .select(
+        'id, event_id, reason, details, status, created_at, review_note, reviewed_at, reporter_user_id, profiles(username, avatar_url), events(title, type, date, location, city, photo_url)',
+      )
       .eq('status', status)
       .order('created_at', { ascending: false })
     if (error) throw error

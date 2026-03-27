@@ -1,0 +1,11 @@
+dist
+node_modules
+.vercel
+
+android
+ios
+
+**/*.min.js
+**/*.min.css
+**/*.map
+

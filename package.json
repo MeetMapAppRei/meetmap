@@ -5,6 +5,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "prepare": "husky",
     "preview": "vite preview",
     "build:mobile": "vite build",
     "android:bump-version": "node scripts/bump-android-version.mjs",
@@ -18,6 +23,7 @@
     "@aws-sdk/client-s3": "^3.750.0",
     "@aws-sdk/s3-request-presigner": "^3.750.0",
     "@capacitor/core": "^6.2.0",
+    "@capacitor/push-notifications": "^6.0.2",
     "@supabase/supabase-js": "^2.43.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -27,6 +33,15 @@
     "@capacitor/cli": "^6.2.0",
     "@capacitor/ios": "^6.2.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^15.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0",
     "vite": "^5.2.0"
   }
 }

@@ -4,35 +4,68 @@ import { useTheme } from '../lib/ThemeContext'
 
 const S = {
   overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
-    zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.9)',
+    zIndex: 1000,
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   sheet: {
-    width: '100%', maxWidth: 480, background: '#0F0F0F',
-    borderRadius: '20px 20px 0 0', border: '1px solid #1A1A1A',
-    padding: '28px 24px 48px', animation: 'slideUp 0.3s ease',
+    width: '100%',
+    maxWidth: 480,
+    background: '#0F0F0F',
+    borderRadius: '20px 20px 0 0',
+    border: '1px solid #1A1A1A',
+    padding: '28px 24px 48px',
+    animation: 'slideUp 0.3s ease',
   },
   input: {
-    width: '100%', background: '#141414', border: '1px solid #222',
-    borderRadius: 10, padding: '12px 14px', color: '#F0F0F0',
-    fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none',
-    marginBottom: 12, colorScheme: 'dark',
+    width: '100%',
+    background: '#141414',
+    border: '1px solid #222',
+    borderRadius: 10,
+    padding: '12px 14px',
+    color: '#F0F0F0',
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 14,
+    outline: 'none',
+    marginBottom: 12,
+    colorScheme: 'dark',
   },
   btn: {
-    width: '100%', background: '#FF6B35', color: '#0A0A0A',
-    border: 'none', borderRadius: 10, padding: 14,
-    fontFamily: "'Bebas Neue', sans-serif", fontSize: 20,
-    letterSpacing: 2, cursor: 'pointer', marginTop: 8,
+    width: '100%',
+    background: '#FF6B35',
+    color: '#0A0A0A',
+    border: 'none',
+    borderRadius: 10,
+    padding: 14,
+    fontFamily: "'Bebas Neue', sans-serif",
+    fontSize: 20,
+    letterSpacing: 2,
+    cursor: 'pointer',
+    marginTop: 8,
   },
   error: {
-    background: '#1A0A0A', border: '1px solid #FF3535',
-    borderRadius: 8, padding: '10px 14px', marginBottom: 12,
-    fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#FF6060',
+    background: '#1A0A0A',
+    border: '1px solid #FF3535',
+    borderRadius: 8,
+    padding: '10px 14px',
+    marginBottom: 12,
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 13,
+    color: '#FF6060',
   },
   success: {
-    background: '#0A1A0A', border: '1px solid #35FF6B',
-    borderRadius: 8, padding: '10px 14px', marginBottom: 12,
-    fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#60FF90',
+    background: '#0A1A0A',
+    border: '1px solid #35FF6B',
+    borderRadius: 8,
+    padding: '10px 14px',
+    marginBottom: 12,
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 13,
+    color: '#60FF90',
   },
 }
 
@@ -46,7 +79,10 @@ export default function AuthModal({ onClose }) {
   const [success, setSuccess] = useState('')
   const { isLight } = useTheme()
 
-  const overlayStyle = { ...S.overlay, background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background }
+  const overlayStyle = {
+    ...S.overlay,
+    background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background,
+  }
   const sheetStyle = {
     ...S.sheet,
     background: isLight ? '#FFFFFF' : S.sheet.background,
@@ -89,7 +125,10 @@ export default function AuthModal({ onClose }) {
         const { error } = await signUp(email, password, username)
         if (error) throw error
         setSuccess('Account created! You can now log in.')
-        setTimeout(() => { setMode('login'); setSuccess('') }, 2000)
+        setTimeout(() => {
+          setMode('login')
+          setSuccess('')
+        }, 2000)
       } else if (mode === 'reset') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: 'https://meetmap-gilt.vercel.app',
@@ -100,8 +139,10 @@ export default function AuthModal({ onClose }) {
     } catch (e) {
       const msg = e.message || 'Something went wrong'
       if (msg.includes('Invalid login')) setError('Incorrect email or password.')
-      else if (msg.includes('already registered')) setError('An account with this email already exists.')
-      else if (msg.includes('rate limit')) setError('Too many attempts. Please wait a few minutes and try again.')
+      else if (msg.includes('already registered'))
+        setError('An account with this email already exists.')
+      else if (msg.includes('rate limit'))
+        setError('Too many attempts. Please wait a few minutes and try again.')
       else setError(msg)
     } finally {
       setLoading(false)
@@ -118,58 +159,138 @@ export default function AuthModal({ onClose }) {
   const btnLabels = { login: 'LET ME IN', signup: 'CREATE ACCOUNT', reset: 'SEND RESET EMAIL' }
 
   return (
-    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div style={overlayStyle} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
       <div style={sheetStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 2, color: '#FF6B35' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 24,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 28,
+              letterSpacing: 2,
+              color: '#FF6B35',
+            }}
+          >
             {titles[mode]}
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: closeColor, fontSize: 26, cursor: 'pointer' }}>×</button>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: closeColor,
+              fontSize: 26,
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
         </div>
 
         {error && <div style={errorStyle}>{error}</div>}
         {success && <div style={successStyle}>{success}</div>}
 
         {mode === 'signup' && (
-          <input style={inputStyle} placeholder="Username (shown publicly)" value={username} onChange={e => setUsername(e.target.value)} />
+          <input
+            style={inputStyle}
+            placeholder="Username (shown publicly)"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
         )}
 
-        <input style={inputStyle} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+        <input
+          style={inputStyle}
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
 
         {mode !== 'reset' && (
           <input
-            style={inputStyle} type="password"
+            style={inputStyle}
+            type="password"
             placeholder={mode === 'signup' ? 'Password (min 6 characters)' : 'Password'}
-            value={password} onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handle()}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handle()}
           />
         )}
 
         {mode === 'login' && (
           <div style={{ textAlign: 'right', marginTop: -6, marginBottom: 8 }}>
-            <span onClick={() => switchMode('reset')} style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: helperText, cursor: 'pointer', textDecoration: 'underline' }}>
+            <span
+              onClick={() => switchMode('reset')}
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                color: helperText,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
               Forgot password?
             </span>
           </div>
         )}
 
-        <button style={{ ...S.btn, opacity: loading ? 0.6 : 1 }} onClick={handle} disabled={loading}>
+        <button
+          style={{ ...S.btn, opacity: loading ? 0.6 : 1 }}
+          onClick={handle}
+          disabled={loading}
+        >
           {loading ? 'LOADING...' : btnLabels[mode]}
         </button>
 
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: helperText, textAlign: 'center', marginTop: 20 }}>
-          {mode === 'login' && <>
-            Don't have an account?{' '}
-            <span onClick={() => switchMode('signup')} style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}>Sign up free</span>
-          </>}
-          {mode === 'signup' && <>
-            Already have an account?{' '}
-            <span onClick={() => switchMode('login')} style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}>Log in</span>
-          </>}
-          {mode === 'reset' && <>
-            <span onClick={() => switchMode('login')} style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}>← Back to login</span>
-          </>}
+        <div
+          style={{
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: 13,
+            color: helperText,
+            textAlign: 'center',
+            marginTop: 20,
+          }}
+        >
+          {mode === 'login' && (
+            <>
+              Don’t have an account?{' '}
+              <span
+                onClick={() => switchMode('signup')}
+                style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Sign up free
+              </span>
+            </>
+          )}
+          {mode === 'signup' && (
+            <>
+              Already have an account?{' '}
+              <span
+                onClick={() => switchMode('login')}
+                style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Log in
+              </span>
+            </>
+          )}
+          {mode === 'reset' && (
+            <>
+              <span
+                onClick={() => switchMode('login')}
+                style={{ color: forgotLinkColor, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                ← Back to login
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>
