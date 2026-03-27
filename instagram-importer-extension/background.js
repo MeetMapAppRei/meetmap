@@ -4,4 +4,3 @@ chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
 
   chrome.tabs.create({ url: msg.url })
 })
-

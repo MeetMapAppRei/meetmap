@@ -80,42 +80,112 @@ export default function ReportEventModal({ event, user, onAuthNeeded, onClose, o
           flexDirection: 'column',
         }}
       >
-        <div style={{ padding: '14px 16px', borderBottom: `1px solid ${inputBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div
+          style={{
+            padding: '14px 16px',
+            borderBottom: `1px solid ${inputBorder}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
           <div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1.8, color: '#FF6B35' }}>
+            <div
+              style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 22,
+                letterSpacing: 1.8,
+                color: '#FF6B35',
+              }}
+            >
               REPORT EVENT
             </div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: textMuted }}>
               {success ? 'Thanks for helping keep MeetMap clean.' : 'Tell us what’s wrong.'}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: isLight ? '#666' : '#fff', fontSize: 26, cursor: 'pointer', padding: 6 }}>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: isLight ? '#666' : '#fff',
+              fontSize: 26,
+              cursor: 'pointer',
+              padding: 6,
+            }}
+          >
             ×
           </button>
         </div>
 
         <div style={{ padding: 16 }}>
           {error && (
-            <div style={{ marginBottom: 12, border: `1px solid ${isLight ? '#FF6B6B' : '#FF3535'}`, background: isLight ? '#FFF1F1' : '#1A0A0A', color: isLight ? '#B00020' : '#FF6060', borderRadius: 10, padding: '10px 12px', fontFamily: "'DM Sans', sans-serif", fontSize: 12, lineHeight: 1.4 }}>
+            <div
+              style={{
+                marginBottom: 12,
+                border: `1px solid ${isLight ? '#FF6B6B' : '#FF3535'}`,
+                background: isLight ? '#FFF1F1' : '#1A0A0A',
+                color: isLight ? '#B00020' : '#FF6060',
+                borderRadius: 10,
+                padding: '10px 12px',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                lineHeight: 1.4,
+              }}
+            >
               {String(error)}
             </div>
           )}
 
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 900, color: textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+          <div
+            style={{
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 11,
+              fontWeight: 900,
+              color: textMuted,
+              marginBottom: 8,
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+            }}
+          >
             Reason
           </div>
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             disabled={success || submitting}
-            style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 10, padding: '10px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none' }}
+            style={{
+              width: '100%',
+              background: inputBg,
+              border: `1px solid ${inputBorder}`,
+              borderRadius: 10,
+              padding: '10px 12px',
+              color: inputText,
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 13,
+              outline: 'none',
+            }}
           >
-            {REASONS.map(r => (
-              <option key={r.value} value={r.value}>{r.label}</option>
+            {REASONS.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
             ))}
           </select>
 
-          <div style={{ marginTop: 12, fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 900, color: textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+          <div
+            style={{
+              marginTop: 12,
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 11,
+              fontWeight: 900,
+              color: textMuted,
+              marginBottom: 8,
+              textTransform: 'uppercase',
+              letterSpacing: 0.6,
+            }}
+          >
             Details (optional)
           </div>
           <textarea
@@ -124,28 +194,73 @@ export default function ReportEventModal({ event, user, onAuthNeeded, onClose, o
             disabled={success || submitting}
             rows={4}
             placeholder="Add any helpful context (e.g. why it seems invalid)…"
-            style={{ width: '100%', background: inputBg, border: `1px solid ${inputBorder}`, borderRadius: 10, padding: '10px 12px', color: inputText, fontFamily: "'DM Sans', sans-serif", fontSize: 13, outline: 'none', resize: 'none' }}
+            style={{
+              width: '100%',
+              background: inputBg,
+              border: `1px solid ${inputBorder}`,
+              borderRadius: 10,
+              padding: '10px 12px',
+              color: inputText,
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 13,
+              outline: 'none',
+              resize: 'none',
+            }}
           />
 
-          <div style={{ marginTop: 14, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              marginTop: 14,
+              display: 'flex',
+              gap: 10,
+              justifyContent: 'flex-end',
+              flexWrap: 'wrap',
+            }}
+          >
             <button
               onClick={onClose}
               disabled={submitting}
-              style={{ background: 'transparent', border: `1px solid ${inputBorder}`, color: textMuted, borderRadius: 10, padding: '10px 14px', cursor: submitting ? 'default' : 'pointer', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16 }}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${inputBorder}`,
+                color: textMuted,
+                borderRadius: 10,
+                padding: '10px 14px',
+                cursor: submitting ? 'default' : 'pointer',
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 16,
+              }}
             >
               CANCEL
             </button>
             <button
               onClick={handleSubmit}
               disabled={submitting || success}
-              style={{ background: '#FF6B35', border: 'none', color: '#0A0A0A', borderRadius: 10, padding: '10px 16px', cursor: submitting || success ? 'default' : 'pointer', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1 }}
+              style={{
+                background: '#FF6B35',
+                border: 'none',
+                color: '#0A0A0A',
+                borderRadius: 10,
+                padding: '10px 16px',
+                cursor: submitting || success ? 'default' : 'pointer',
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 16,
+                letterSpacing: 1,
+              }}
             >
               {submitting ? 'SUBMITTING…' : success ? 'RECEIVED' : 'SUBMIT'}
             </button>
           </div>
 
           {!user && (
-            <div style={{ marginTop: 10, fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: textMuted }}>
+            <div
+              style={{
+                marginTop: 10,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                color: textMuted,
+              }}
+            >
               Log in to submit a report.
             </div>
           )}
@@ -154,4 +269,3 @@ export default function ReportEventModal({ event, user, onAuthNeeded, onClose, o
     </div>
   )
 }
-

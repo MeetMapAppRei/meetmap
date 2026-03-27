@@ -25,7 +25,6 @@ export default async function handler(req, res) {
     r2ServerCredentialsComplete: r2Ready,
     supabaseKeysForPresignJwt: supabaseForPresign,
     viteUseR2Storage_runtimeString: viteR2 === undefined ? '(undefined)' : String(viteR2),
-    note:
-      'Uploads use R2 only if the *built* JS has VITE_USE_R2_STORAGE truthy (set in Vercel, then Production redeploy). This endpoint shows server env; if vite flag is undefined here, add VITE_USE_R2_STORAGE for Production and redeploy.',
+    note: 'Uploads use R2 only if the *built* JS has VITE_USE_R2_STORAGE truthy (set in Vercel, then Production redeploy). This endpoint shows server env; if vite flag is undefined here, add VITE_USE_R2_STORAGE for Production and redeploy.',
   })
 }

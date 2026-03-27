@@ -61,7 +61,10 @@ function bestFromSrcset(srcset) {
   const s = String(srcset || '')
   if (!s) return null
   // srcset format: "url1 640w, url2 1080w"
-  const parts = s.split(',').map(p => p.trim()).filter(Boolean)
+  const parts = s
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)
   let best = null
   for (const p of parts) {
     const [urlPart, wPart] = p.split(/\s+/)
@@ -115,9 +118,11 @@ function getBestImageUrl() {
     if (best?.url) return best.url
   }
 
-  if (ogSecure?.content && !looksLikeProfileImage(ogSecure.content)) return upgradeInstagramImage(ogSecure.content)
+  if (ogSecure?.content && !looksLikeProfileImage(ogSecure.content))
+    return upgradeInstagramImage(ogSecure.content)
   if (og?.content && !looksLikeProfileImage(og.content)) return upgradeInstagramImage(og.content)
-  if (twitter?.content && !looksLikeProfileImage(twitter.content)) return upgradeInstagramImage(twitter.content)
+  if (twitter?.content && !looksLikeProfileImage(twitter.content))
+    return upgradeInstagramImage(twitter.content)
 
   // If it's a reels/video page but poster was missing, keep using video.poster as a fallback.
   if (isReelsPage) {
@@ -128,7 +133,8 @@ function getBestImageUrl() {
 
   // Fallback: try common post image containers.
   const articleImg = document.querySelector('article img')
-  if (articleImg && articleImg.src && !looksLikeProfileImage(articleImg.src)) return upgradeInstagramImage(articleImg.src)
+  if (articleImg && articleImg.src && !looksLikeProfileImage(articleImg.src))
+    return upgradeInstagramImage(articleImg.src)
 
   // Last resort: scan images, but avoid this on reels/video pages because there are often
   // multiple thumbnails/frames and we can pick the wrong one.
@@ -156,10 +162,7 @@ function ensureButton() {
   const p = window.location.pathname
   // Instagram uses multiple patterns: /p/... (posts), /reels/... (reels), /tv/... (videos)
   const looksLikePost =
-    p.startsWith('/p/') ||
-    p.startsWith('/reels/') ||
-    p.startsWith('/reel/') ||
-    p.startsWith('/tv/')
+    p.startsWith('/p/') || p.startsWith('/reels/') || p.startsWith('/reel/') || p.startsWith('/tv/')
   if (!looksLikePost) return
 
   const btn = document.createElement('button')
@@ -205,7 +208,7 @@ function ensureButton() {
     try {
       const maybePromise = chrome.runtime.sendMessage(
         { type: 'OPEN_MEETMAP_IMPORT', url },
-        () => {}
+        () => {},
       )
       if (maybePromise && typeof maybePromise.then === 'function') {
         maybePromise.catch(() => {})
@@ -225,4 +228,3 @@ const timer = setInterval(() => {
   ensureButton()
   if (tries > 20) clearInterval(timer)
 }, 500)
-

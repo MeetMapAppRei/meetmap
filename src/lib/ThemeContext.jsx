@@ -26,10 +26,10 @@ export function ThemeProvider({ children }) {
     () => ({
       theme,
       isLight: theme === 'light',
-      toggleTheme: () => setTheme(t => (t === 'dark' ? 'light' : 'dark')),
+      toggleTheme: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')),
       setTheme,
     }),
-    [theme]
+    [theme],
   )
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
@@ -40,4 +40,3 @@ export const useTheme = () => {
   if (!v) throw new Error('useTheme must be used within ThemeProvider')
   return v
 }
-

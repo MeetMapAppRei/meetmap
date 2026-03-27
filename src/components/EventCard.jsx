@@ -3,7 +3,10 @@ import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 
 const TYPE_COLORS = {
-  meet: '#FF6B35', 'car show': '#FFD700', 'track day': '#00D4FF', cruise: '#7CFF6B',
+  meet: '#FF6B35',
+  'car show': '#FFD700',
+  'track day': '#00D4FF',
+  cruise: '#7CFF6B',
 }
 const STATUS_META = {
   moved: { label: 'Moved', fg: '#00D4FF', bg: '#00D4FF22' },
@@ -21,7 +24,8 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
   const today = new Date().toISOString().split('T')[0]
   const isToday = event.date === today
   const isPast = event.date < today
-  const goingCount = event.going_count || event.event_attendees?.[0]?.count || event.attendee_count || 0
+  const goingCount =
+    event.going_count || event.event_attendees?.[0]?.count || event.attendee_count || 0
   const interestedCount = event.interested_count || 0
   const directionsUrl = getDirectionsUrl(event)
   const statusMeta = STATUS_META[String(event.status || 'active').toLowerCase()]
@@ -32,9 +36,13 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
       onClick={onClick}
       style={{
         background: event.featured
-          ? (isLight ? 'linear-gradient(135deg, #FFFFFF, #F6F6F6)' : 'linear-gradient(135deg, #141414, #111)')
-          : (isLight ? '#FFFFFF' : '#111'),
-        border: `1px solid ${event.featured ? (isLight ? '#FFE9DD' : '#2A1A0A') : (isLight ? '#E5E5E5' : '#1A1A1A')}`,
+          ? isLight
+            ? 'linear-gradient(135deg, #FFFFFF, #F6F6F6)'
+            : 'linear-gradient(135deg, #141414, #111)'
+          : isLight
+            ? '#FFFFFF'
+            : '#111',
+        border: `1px solid ${event.featured ? (isLight ? '#FFE9DD' : '#2A1A0A') : isLight ? '#E5E5E5' : '#1A1A1A'}`,
         borderLeft: `3px solid ${color}`,
         borderRadius: 12,
         marginBottom: 10,
@@ -43,11 +51,11 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
         opacity: isPast ? 0.55 : 1,
         transition: 'transform 0.15s ease, box-shadow 0.15s ease',
       }}
-      onMouseEnter={e => {
+      onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'translateY(-2px)'
         e.currentTarget.style.boxShadow = `0 8px 32px ${color}18`
       }}
-      onMouseLeave={e => {
+      onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)'
         e.currentTarget.style.boxShadow = 'none'
       }}
@@ -67,23 +75,77 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
 
       <div style={{ padding: '13px 16px 14px' }}>
         {/* Badges row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            marginBottom: 6,
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: color + '22', color, padding: '2px 9px', borderRadius: 20, textTransform: 'capitalize', letterSpacing: 0.5 }}>
+            <span
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 10,
+                fontWeight: 700,
+                background: color + '22',
+                color,
+                padding: '2px 9px',
+                borderRadius: 20,
+                textTransform: 'capitalize',
+                letterSpacing: 0.5,
+              }}
+            >
               {event.type}
             </span>
             {isToday && (
-              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: '#FF6B3522', color: '#FF6B35', padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5 }}>
+              <span
+                style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: '#FF6B3522',
+                  color: '#FF6B35',
+                  padding: '2px 9px',
+                  borderRadius: 20,
+                  letterSpacing: 0.5,
+                }}
+              >
                 TODAY
               </span>
             )}
             {event.featured && (
-              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: '#FFD70022', color: '#FFD700', padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5 }}>
+              <span
+                style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: '#FFD70022',
+                  color: '#FFD700',
+                  padding: '2px 9px',
+                  borderRadius: 20,
+                  letterSpacing: 0.5,
+                }}
+              >
                 ⭐ FEATURED
               </span>
             )}
             {statusMeta && (
-              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 700, background: statusMeta.bg, color: statusMeta.fg, padding: '2px 9px', borderRadius: 20, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              <span
+                style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: statusMeta.bg,
+                  color: statusMeta.fg,
+                  padding: '2px 9px',
+                  borderRadius: 20,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                }}
+              >
                 {statusMeta.label}
               </span>
             )}
@@ -112,9 +174,9 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
               onToggleSaved?.(event.id)
             }}
             style={{
-              border: `1px solid ${saved ? '#FF6B35' : (isLight ? '#E5E5E5' : '#2A2A2A')}`,
+              border: `1px solid ${saved ? '#FF6B35' : isLight ? '#E5E5E5' : '#2A2A2A'}`,
               background: saved ? '#26140E' : 'transparent',
-              color: saved ? '#FF8A5C' : (isLight ? '#555' : '#888'),
+              color: saved ? '#FF8A5C' : isLight ? '#555' : '#888',
               borderRadius: 999,
               padding: '2px 8px',
               fontFamily: "'DM Sans', sans-serif",
@@ -127,34 +189,93 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
           </button>
         </div>
 
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 21, letterSpacing: 1, marginBottom: 4, lineHeight: 1.1 }}>{event.title}</div>
+        <div
+          style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: 21,
+            letterSpacing: 1,
+            marginBottom: 4,
+            lineHeight: 1.1,
+          }}
+        >
+          {event.title}
+        </div>
 
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#555' : '#666', marginBottom: 4 }}>
+        <div
+          style={{
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: 12,
+            color: isLight ? '#555' : '#666',
+            marginBottom: 4,
+          }}
+        >
           📍 {event.address || `${event.location} · ${event.city}`}
         </div>
 
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#777' : '#888', marginBottom: event.tags?.length ? 8 : 0 }}>
+        <div
+          style={{
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: 12,
+            color: isLight ? '#777' : '#888',
+            marginBottom: event.tags?.length ? 8 : 0,
+          }}
+        >
           <span style={{ color: color }}> 📅 {event.date}</span>
           {event.time && <span> · {formatEventTime(event.time)}</span>}
           {event.host && <span style={{ color: isLight ? '#666' : '#555' }}> · {event.host}</span>}
         </div>
         {event.latest_update_message && (
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#D1491A' : '#FF8A5C', marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div
+            style={{
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              color: isLight ? '#D1491A' : '#FF8A5C',
+              marginBottom: 8,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
             📣 {event.latest_update_message}
           </div>
         )}
 
         {event.tags?.length > 0 && (
           <div style={{ marginBottom: 8 }}>
-            {event.tags.slice(0, 4).map(tag => (
-              <span key={tag} style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 20, fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 600, border: `1px solid ${color}33`, color: color + 'cc', background: color + '0A', margin: '2px' }}>{tag}</span>
+            {event.tags.slice(0, 4).map((tag) => (
+              <span
+                key={tag}
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 9px',
+                  borderRadius: 20,
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  border: `1px solid ${color}33`,
+                  color: color + 'cc',
+                  background: color + '0A',
+                  margin: '2px',
+                }}
+              >
+                {tag}
+              </span>
             ))}
           </div>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#666' : '#555' }}>
-            👥 <span style={{ color: isLight ? '#777' : '#777' }}>{goingCount} going{interestedCount > 0 ? ` · ${interestedCount} interested` : ''}</span>
+          <div
+            style={{
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              color: isLight ? '#666' : '#555',
+            }}
+          >
+            👥{' '}
+            <span style={{ color: isLight ? '#777' : '#777' }}>
+              {goingCount} going{interestedCount > 0 ? ` · ${interestedCount} interested` : ''}
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <a
@@ -174,7 +295,13 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
             >
               Directions
             </a>
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#444' : '#444' }}>
+            <div
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                color: isLight ? '#444' : '#444',
+              }}
+            >
               Tap to view →
             </div>
           </div>

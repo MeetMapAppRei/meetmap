@@ -1,7 +1,34 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
-import { createEvent, fetchEvents, fetchFlyerImports, createFlyerImport, updateFlyerImportStatus, updateFlyerImport, signOut, uploadFlyerImportImage, fetchSavedEventIds, setSavedEventStatus, upsertSavedEvents, fetchEventStatuses, fetchLatestEventUpdates, fetchEventReports, resolveEventReport } from './lib/supabase'
+import {
+  createEvent,
+  fetchEvents,
+  fetchFlyerImports,
+  createFlyerImport,
+  updateFlyerImportStatus,
+  updateFlyerImport,
+  signOut,
+  uploadFlyerImportImage,
+  fetchSavedEventIds,
+  setSavedEventStatus,
+  upsertSavedEvents,
+  fetchEventStatuses,
+  fetchLatestEventUpdates,
+  fetchEventReports,
+  resolveEventReport,
+  upsertDevicePushToken,
+  upsertNotificationPreferences,
+  fetchNotificationPreferences,
+} from './lib/supabase'
+import { dedupeEventsByLikelyDuplicate } from './lib/eventDedupe'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
+import {
+  getWebNotificationPermission,
+  requestWebNotificationPermission,
+  initializeNativePush,
+  isNativeAndroidPushSupported,
+  getNativePushPermission,
+} from './lib/pushNotifications'
 import AuthModal from './components/AuthModal'
 import PostEventForm from './components/PostEventForm'
 import EventDetail from './components/EventDetail'
@@ -15,11 +42,17 @@ import { geocodeAddress } from './lib/geocode'
 const parseCsvEnv = (value) =>
   String(value || '')
     .split(',')
-    .map(v => v.trim())
+    .map((v) => v.trim())
     .filter(Boolean)
 
-const IMPORT_ADMIN_EMAILS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_EMAILS).map(v => v.toLowerCase())
+const IMPORT_ADMIN_EMAILS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_EMAILS).map((v) =>
+  v.toLowerCase(),
+)
 const IMPORT_ADMIN_USER_IDS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_USER_IDS)
+const NATIVE_PUSH_ENABLED =
+  String(import.meta.env.VITE_ENABLE_NATIVE_PUSH || '')
+    .trim()
+    .toLowerCase() === 'true'
 const REMINDER_WINDOWS = [
   { id: '24h', leadMs: 24 * 60 * 60 * 1000, windowMs: 60 * 60 * 1000 },
   { id: '2h', leadMs: 2 * 60 * 60 * 1000, windowMs: 20 * 60 * 1000 },
@@ -36,6 +69,48 @@ const getStatusSnapshotStorageKey = (user) => `meetmap:status-snapshot:${user?.i
 const getStatusNotifiedStorageKey = (user) => `meetmap:status-notified:${user?.id || 'anon'}`
 const getUpdateSnapshotStorageKey = (user) => `meetmap:update-snapshot:${user?.id || 'anon'}`
 const getUpdateNotifiedStorageKey = (user) => `meetmap:update-notified:${user?.id || 'anon'}`
+
+const CITY_SLUG_OVERRIDES = {
+  'new-york': 'New York',
+  'los-angeles': 'Los Angeles',
+  'fort-worth': 'Fort Worth',
+  boardman: 'Boardman',
+  prineville: 'Prineville',
+  union: 'Union',
+  'forest-city': 'Forest City',
+  lulea: 'Lulea',
+}
+
+const titleFromCitySlug = (slug) => {
+  const clean = String(slug || '')
+    .trim()
+    .toLowerCase()
+  if (!clean) return ''
+  if (CITY_SLUG_OVERRIDES[clean]) return CITY_SLUG_OVERRIDES[clean]
+  return clean
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+const applySeoForCityPage = (cityLabel) => {
+  if (typeof document === 'undefined') return
+  const base = 'Meet Map — Local Car Events'
+  const title = cityLabel ? `Car Meets in ${cityLabel} — Meet Map` : base
+  document.title = title
+  const desc = cityLabel
+    ? `Find car meets, car shows, cruises, and track days in ${cityLabel}. Browse upcoming events and post your own.`
+    : 'Find and post local car meets, shows, and track days near you.'
+
+  const descTag = document.querySelector('meta[name="description"]')
+  if (descTag) descTag.setAttribute('content', desc)
+
+  const canonical = document.querySelector('link[rel="canonical"]')
+  if (canonical) canonical.setAttribute('href', window.location.href)
+  const ogUrl = document.querySelector('meta[property="og:url"]')
+  if (ogUrl) ogUrl.setAttribute('content', window.location.href)
+}
 
 const eventStartMs = (event) => {
   if (!event?.date) return null
@@ -57,6 +132,21 @@ function AppInner() {
   const [loadError, setLoadError] = useState(false)
   const [loadErrorMessage, setLoadErrorMessage] = useState('')
   const [view, setView] = useState('list')
+
+  // Support SEO-friendly city landing pages: /car-meets-in-<slug>/
+  useEffect(() => {
+    const path = String(window.location.pathname || '')
+    const match = path.match(/^\/car-meets-in-([^/]+)\/?$/i)
+    if (!match) {
+      applySeoForCityPage('')
+      return
+    }
+    const slug = match[1]
+    const label = titleFromCitySlug(slug)
+    if (!label) return
+    setSearchQuery(label)
+    applySeoForCityPage(label)
+  }, [])
   const [filterType, setFilterType] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
@@ -65,14 +155,13 @@ function AppInner() {
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
   const [showPast, setShowPast] = useState(false)
-  const [showCanceled, setShowCanceled] = useState(false)
-  const [showGoingOnly, setShowGoingOnly] = useState(false)
   const [showSavedOnly, setShowSavedOnly] = useState(false)
   const [savedEventIds, setSavedEventIds] = useState([])
   const [savedSyncAvailable, setSavedSyncAvailable] = useState(true)
   const [notificationPermission, setNotificationPermission] = useState(
-    typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported'
+    getWebNotificationPermission(),
   )
+  const [pushToken, setPushToken] = useState('')
 
   const [showImportQueue, setShowImportQueue] = useState(false)
   const [imports, setImports] = useState([])
@@ -122,18 +211,18 @@ function AppInner() {
     const params = new URLSearchParams(window.location.search)
     const eventId = params.get('event')
     if (eventId && events.length > 0) {
-      const found = events.find(e => e.id === eventId)
+      const found = events.find((e) => e.id === eventId)
       if (found) setSelectedEvent(found)
     }
   }, [events])
 
   const handlePosted = (newEvent) => {
-    setEvents(prev => [newEvent, ...prev])
+    setEvents((prev) => [newEvent, ...prev])
   }
 
   const handleUpdated = (updatedEvent) => {
     if (!updatedEvent) return
-    setEvents(prev => prev.map(e => (e.id === updatedEvent.id ? updatedEvent : e)))
+    setEvents((prev) => prev.map((e) => (e.id === updatedEvent.id ? updatedEvent : e)))
     setSelectedEvent(updatedEvent)
   }
 
@@ -192,16 +281,68 @@ function AppInner() {
   }, [user, savedEventIds])
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return
-    setNotificationPermission(window.Notification.permission)
+    const nativeSupported = isNativeAndroidPushSupported()
+    if (!nativeSupported) {
+      setNotificationPermission(getWebNotificationPermission())
+      return
+    }
+    if (!NATIVE_PUSH_ENABLED) {
+      setNotificationPermission('denied')
+      return
+    }
+
+    let mounted = true
+    // Important: do NOT request/register push on startup (Android can crash here if FCM isn't configured).
+    // Only read permission state. The user must explicitly enable Alerts.
+    getNativePushPermission()
+      .then((perm) => {
+        if (!mounted) return
+        setNotificationPermission(perm === 'granted' ? 'granted' : 'denied')
+      })
+      .catch(() => {
+        if (!mounted) return
+        setNotificationPermission('denied')
+      })
+
+    return () => {
+      mounted = false
+    }
   }, [])
+
+  useEffect(() => {
+    if (!user?.id) return
+    if (!pushToken) return
+    upsertDevicePushToken({ userId: user.id, token: pushToken, platform: 'android' }).catch(
+      (error) => {
+        console.error('Failed to save push token:', error)
+      },
+    )
+  }, [user, pushToken])
+
+  useEffect(() => {
+    if (!user?.id) return
+    if (notificationPermission !== 'granted') return
+    fetchNotificationPreferences(user.id)
+      .then((prefs) => {
+        if (prefs) return prefs
+        return upsertNotificationPreferences(user.id, {
+          reminders_enabled: true,
+          event_updates_enabled: true,
+        })
+      })
+      .catch((error) => {
+        console.error('Failed to load notification preferences:', error)
+      })
+  }, [user, notificationPermission])
 
   const toRad = (deg) => (deg * Math.PI) / 180
   const distanceMiles = (lat1, lon1, lat2, lon2) => {
     const R = 3958.8 // Earth radius in miles
     const dLat = toRad(lat2 - lat1)
     const dLon = toRad(lon2 - lon1)
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
   }
@@ -209,10 +350,10 @@ function AppInner() {
   const handleToggleSaved = async (eventId) => {
     if (!eventId) return
     let shouldSave = false
-    setSavedEventIds(prev => {
+    setSavedEventIds((prev) => {
       const exists = prev.includes(eventId)
       shouldSave = !exists
-      return exists ? prev.filter(id => id !== eventId) : [eventId, ...prev]
+      return exists ? prev.filter((id) => id !== eventId) : [eventId, ...prev]
     })
 
     if (user && savedSyncAvailable) {
@@ -226,43 +367,95 @@ function AppInner() {
   }
 
   const handleEnableNotifications = async () => {
+    if (isNativeAndroidPushSupported()) {
+      if (!NATIVE_PUSH_ENABLED) {
+        setNotificationPermission('denied')
+        return
+      }
+      try {
+        const result = await initializeNativePush({
+          onToken: async (token) => {
+            if (token) setPushToken(token)
+          },
+          onRegistrationError: (error) => {
+            console.error('Native push registration failed:', error)
+          },
+        })
+        setNotificationPermission(result?.enabled ? 'granted' : 'denied')
+        if (result?.enabled && user?.id) {
+          await upsertNotificationPreferences(user.id, {
+            reminders_enabled: true,
+            event_updates_enabled: true,
+          })
+        }
+      } catch (e) {
+        setNotificationPermission('denied')
+        console.error('Native push permission request failed:', e)
+      }
+      return
+    }
+
     if (typeof window === 'undefined' || !('Notification' in window)) return
     try {
-      const permission = await window.Notification.requestPermission()
+      const permission = await requestWebNotificationPermission()
       setNotificationPermission(permission)
+      if (permission === 'granted' && user?.id) {
+        await upsertNotificationPreferences(user.id, {
+          reminders_enabled: true,
+          event_updates_enabled: true,
+        })
+      }
     } catch (e) {
       console.error('Notification permission request failed:', e)
     }
   }
 
-  const baseEvents = showSavedOnly
-    ? events.filter(e => savedEventIds.includes(e.id))
-    : events
+  const nativePushTemporarilyDisabled = isNativeAndroidPushSupported() && !NATIVE_PUSH_ENABLED
 
-  const statusFilteredEvents = showCanceled
-    ? baseEvents
-    : baseEvents.filter(e => String(e.status || 'active').toLowerCase() !== 'canceled')
+  const baseEvents = showSavedOnly ? events.filter((e) => savedEventIds.includes(e.id)) : events
 
-  const goingFilteredEvents = showGoingOnly
-    ? statusFilteredEvents.filter(e => Number(e.going_count || 0) > 0)
-    : statusFilteredEvents
+  const todayKey = new Date().toISOString().split('T')[0]
+  // When toggled, show ONLY past events (not "include past").
+  const pastFilteredEvents = showPast
+    ? baseEvents.filter((e) => String(e?.date || '') < todayKey)
+    : baseEvents
 
-  const eventsForDisplay = nearMeOnly && nearMeCoords
-    ? goingFilteredEvents
-      .filter(e => Number.isFinite(e.lat) && Number.isFinite(e.lng) && distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES)
-      .sort((a, b) => {
-        const aStart = eventStartMs(a) ?? Number.POSITIVE_INFINITY
-        const bStart = eventStartMs(b) ?? Number.POSITIVE_INFINITY
-        if (aStart !== bStart) return aStart - bStart
-        // Tie-breaker: keep closer events first when start time matches.
-        return distanceMiles(nearMeCoords.lat, nearMeCoords.lng, a.lat, a.lng) -
-          distanceMiles(nearMeCoords.lat, nearMeCoords.lng, b.lat, b.lng)
-      })
-    : goingFilteredEvents
+  const filteredDedupedEvents = dedupeEventsByLikelyDuplicate(pastFilteredEvents)
 
-  const upcomingCount = eventsForDisplay.filter(e => e.date >= new Date().toISOString().split('T')[0]).length
+  const eventsForDisplay =
+    nearMeOnly && nearMeCoords
+      ? filteredDedupedEvents
+          .filter(
+            (e) =>
+              Number.isFinite(e.lat) &&
+              Number.isFinite(e.lng) &&
+              distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES,
+          )
+          .sort((a, b) => {
+            const aStart = eventStartMs(a) ?? Number.POSITIVE_INFINITY
+            const bStart = eventStartMs(b) ?? Number.POSITIVE_INFINITY
+            if (aStart !== bStart) return aStart - bStart
+            // Tie-breaker: keep closer events first when start time matches.
+            return (
+              distanceMiles(nearMeCoords.lat, nearMeCoords.lng, a.lat, a.lng) -
+              distanceMiles(nearMeCoords.lat, nearMeCoords.lng, b.lat, b.lng)
+            )
+          })
+      : filteredDedupedEvents
+
+  const eventsForCurrentView =
+    view === 'mine' && user
+      ? [...eventsForDisplay]
+          .filter((e) => e?.user_id === user.id)
+          .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
+      : eventsForDisplay
+
+  const upcomingCount = eventsForCurrentView.filter(
+    (e) => e.date >= new Date().toISOString().split('T')[0],
+  ).length
 
   useEffect(() => {
+    if (isNativeAndroidPushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
     if (!savedEventIds.length || !events.length) return
@@ -278,7 +471,7 @@ function AppInner() {
     const now = Date.now()
     let changed = false
     const savedSet = new Set(savedEventIds)
-    const candidateEvents = events.filter(e => savedSet.has(e.id))
+    const candidateEvents = events.filter((e) => savedSet.has(e.id))
 
     for (const event of candidateEvents) {
       const startMs = eventStartMs(event)
@@ -290,8 +483,13 @@ function AppInner() {
         const reminderMs = startMs - w.leadMs
         if (now >= reminderMs && now <= reminderMs + w.windowMs) {
           try {
-            const when = new Date(startMs).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
-            const place = event.address || `${event.location || ''}${event.city ? `, ${event.city}` : ''}`.trim()
+            const when = new Date(startMs).toLocaleString([], {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })
+            const place =
+              event.address ||
+              `${event.location || ''}${event.city ? `, ${event.city}` : ''}`.trim()
             new window.Notification(`Upcoming saved event: ${event.title}`, {
               body: `${when}${place ? ` • ${place}` : ''}`,
               icon: '/og-image.svg',
@@ -314,6 +512,7 @@ function AppInner() {
   }, [notificationPermission, savedEventIds, events, user])
 
   useEffect(() => {
+    if (isNativeAndroidPushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
     if (!savedEventIds.length) return
@@ -345,8 +544,13 @@ function AppInner() {
             : ''
           const previous = snapshot[eventId] || ''
 
-          if (hasBaseline && signature && previous !== signature && nextNotified[eventId] !== signature) {
-            const eventTitle = events.find(e => e.id === eventId)?.title || 'Saved event'
+          if (
+            hasBaseline &&
+            signature &&
+            previous !== signature &&
+            nextNotified[eventId] !== signature
+          ) {
+            const eventTitle = events.find((e) => e.id === eventId)?.title || 'Saved event'
             new window.Notification(`New host update: ${eventTitle}`, {
               body: row.latest_update_message || 'The host posted a new update.',
               icon: '/og-image.svg',
@@ -370,6 +574,7 @@ function AppInner() {
   }, [notificationPermission, savedEventIds, events, user])
 
   useEffect(() => {
+    if (isNativeAndroidPushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
     if (!savedEventIds.length) return
@@ -402,15 +607,21 @@ function AppInner() {
           const signature = `${status}|${note}|${updatedAt}`
           const previous = snapshot[eventId]
 
-          if (hasBaseline && previous && previous.signature !== signature && nextNotified[eventId] !== signature) {
-            const eventTitle = events.find(e => e.id === eventId)?.title || 'Saved event'
-            const label = status === 'canceled'
-              ? 'Canceled'
-              : status === 'moved'
-                ? 'Moved'
-                : status === 'delayed'
-                  ? 'Delayed'
-                  : 'Updated'
+          if (
+            hasBaseline &&
+            previous &&
+            previous.signature !== signature &&
+            nextNotified[eventId] !== signature
+          ) {
+            const eventTitle = events.find((e) => e.id === eventId)?.title || 'Saved event'
+            const label =
+              status === 'canceled'
+                ? 'Canceled'
+                : status === 'moved'
+                  ? 'Moved'
+                  : status === 'delayed'
+                    ? 'Delayed'
+                    : 'Updated'
             new window.Notification(`Status changed: ${eventTitle}`, {
               body: note ? `${label} • ${note}` : label,
               icon: '/og-image.svg',
@@ -440,12 +651,12 @@ function AppInner() {
       return
     }
     navigator.geolocation.getCurrentPosition(
-      pos => {
+      (pos) => {
         setNearMeCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
         setNearMeOnly(true)
       },
-      err => setNearMeError(err.message || 'Could not get location'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5 * 60 * 1000 }
+      (err) => setNearMeError(err.message || 'Could not get location'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5 * 60 * 1000 },
     )
   }
 
@@ -480,7 +691,7 @@ function AppInner() {
     setModerationResolvingReportId(reportId)
     try {
       await resolveEventReport(reportId, user.id, nextStatus)
-      setModerationReports(prev => prev.filter(r => r.id !== reportId))
+      setModerationReports((prev) => prev.filter((r) => r.id !== reportId))
     } catch (e) {
       console.error('Moderation update failed:', e)
     } finally {
@@ -553,7 +764,10 @@ function AppInner() {
         const resp = await fetch(apiUrl('/api/extract-flyer'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageUrl: importParams.imageUrl, sourceUrl: importParams.sourceUrl }),
+          body: JSON.stringify({
+            imageUrl: importParams.imageUrl,
+            sourceUrl: importParams.sourceUrl,
+          }),
         })
         const json = await resp.json()
         if (!resp.ok) {
@@ -672,36 +886,44 @@ function AppInner() {
     if (!canAccessImports || !user || !imp) return
     setApprovingImportId(imp.id)
     try {
-      const required = ['title', 'type', 'date', 'location', 'city']
-      const ready = required.every(k => typeof imp?.[k] === 'string' ? imp[k].trim().length > 0 : !!imp?.[k])
+      const required = ['title', 'type', 'date', 'city']
+      const ready = required.every((k) =>
+        typeof imp?.[k] === 'string' ? imp[k].trim().length > 0 : !!imp?.[k],
+      )
       if (!ready) return
 
       let coords = null
       // Prefer AI-provided full address; otherwise fall back to venue + city.
-      const query = imp.address?.trim() ? imp.address : `${imp.location || ''}, ${imp.city || ''}`.trim()
+      const query = imp.address?.trim()
+        ? imp.address
+        : `${imp.location || ''}, ${imp.city || ''}`.trim()
       if (query) coords = await geocodeAddress(query).catch(() => null)
 
       const tags = Array.isArray(imp.tags) ? imp.tags : []
+      const safeLocation = String(imp.location || '').trim() || String(imp.city || '').trim()
 
-      const created = await createEvent({
-        title: imp.title,
-        type: imp.type,
-        date: imp.date,
-        time: imp.time || null,
-        location: imp.location,
-        city: imp.city,
-        address: imp.address || null,
-        description: imp.description || null,
-        tags,
-        host: imp.host || null,
-        lat: coords?.lat || null,
-        lng: coords?.lng || null,
-        photo_url: imp.image_url || null,
-      }, user.id)
+      const created = await createEvent(
+        {
+          title: imp.title,
+          type: imp.type,
+          date: imp.date,
+          time: imp.time || null,
+          location: safeLocation,
+          city: imp.city,
+          address: imp.address || null,
+          description: imp.description || null,
+          tags,
+          host: imp.host || null,
+          lat: coords?.lat || null,
+          lng: coords?.lng || null,
+          photo_url: imp.image_url || null,
+        },
+        user.id,
+      )
 
       await updateFlyerImportStatus(imp.id, 'approved')
       // Add into the local feed immediately for better UX.
-      setEvents(prev => [created, ...prev])
+      setEvents((prev) => [created, ...prev])
       setSelectedEvent(created)
       setShowImportQueue(false)
     } catch (e) {
@@ -725,7 +947,7 @@ function AppInner() {
     if (!canAccessImports || !user || !importId || !nextDraft) return
     const tags = (nextDraft.tagsText || '')
       .split(',')
-      .map(t => t.trim())
+      .map((t) => t.trim())
       .filter(Boolean)
 
     const tagsText = (nextDraft.tagsText || '').trim()
@@ -760,13 +982,17 @@ function AppInner() {
   }
 
   return (
-    <div style={{
-      fontFamily: "'Bebas Neue', 'Impact', sans-serif",
-      background: isLight ? '#F6F6F6' : '#0A0A0A',
-      minHeight: '100vh',
-      color: isLight ? '#111111' : '#F0F0F0',
-      maxWidth: 480, margin: '0 auto', position: 'relative',
-    }}>
+    <div
+      style={{
+        fontFamily: "'Bebas Neue', 'Impact', sans-serif",
+        background: isLight ? '#F6F6F6' : '#0A0A0A',
+        minHeight: '100vh',
+        color: isLight ? '#111111' : '#F0F0F0',
+        maxWidth: 480,
+        margin: '0 auto',
+        position: 'relative',
+      }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -781,26 +1007,66 @@ function AppInner() {
       `}</style>
 
       {/* ── HEADER ── */}
-      <div style={{
-        background: isLight ? '#F6F6F6' : '#0A0A0A',
-        borderBottom: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
-        padding: 'calc(env(safe-area-inset-top) + 14px) 18px 10px',
-        position: 'sticky', top: 0, zIndex: 100,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', rowGap: 8 }}>
+      <div
+        style={{
+          background: isLight ? '#F6F6F6' : '#0A0A0A',
+          borderBottom: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
+          padding: 'calc(env(safe-area-inset-top) + 14px) 18px 10px',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 10,
+            flexWrap: 'wrap',
+            rowGap: 8,
+          }}
+        >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{ fontSize: 20 }}>🚗</span>
               <span style={{ fontSize: 26, letterSpacing: 4, color: '#FF6B35' }}>MEET</span>
               <span style={{ fontSize: 26, letterSpacing: 4 }}>MAP</span>
             </div>
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, color: '#444', letterSpacing: 1, marginTop: -1 }}>
-              <span className="live-dot" style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#FF6B35', marginRight: 5 }} />
+            <div
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 10,
+                color: '#444',
+                letterSpacing: 1,
+                marginTop: -1,
+              }}
+            >
+              <span
+                className="live-dot"
+                style={{
+                  display: 'inline-block',
+                  width: 5,
+                  height: 5,
+                  borderRadius: '50%',
+                  background: '#FF6B35',
+                  marginRight: 5,
+                }}
+              />
               {upcomingCount} UPCOMING EVENTS
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              marginLeft: 'auto',
+            }}
+          >
             {user ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#555' }}>
@@ -808,7 +1074,16 @@ function AppInner() {
                 </div>
                 <button
                   onClick={signOut}
-                  style={{ background: 'none', border: '1px solid #222', borderRadius: 6, padding: '5px 8px', color: '#555', fontFamily: "'DM Sans', sans-serif", fontSize: 11, cursor: 'pointer' }}
+                  style={{
+                    background: 'none',
+                    border: '1px solid #222',
+                    borderRadius: 6,
+                    padding: '5px 8px',
+                    color: '#555',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: 11,
+                    cursor: 'pointer',
+                  }}
                 >
                   Sign out
                 </button>
@@ -816,7 +1091,17 @@ function AppInner() {
             ) : (
               <button
                 onClick={() => setShowAuth(true)}
-                style={{ background: 'none', border: '1px solid #FF6B3555', borderRadius: 8, padding: '7px 10px', color: '#FF6B35', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 1.2, cursor: 'pointer' }}
+                style={{
+                  background: 'none',
+                  border: '1px solid #FF6B3555',
+                  borderRadius: 8,
+                  padding: '7px 10px',
+                  color: '#FF6B35',
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 14,
+                  letterSpacing: 1.2,
+                  cursor: 'pointer',
+                }}
               >
                 LOG IN
               </button>
@@ -838,19 +1123,25 @@ function AppInner() {
               {isLight ? 'LIGHT' : 'DARK'}
             </button>
             <button
-              onClick={handleEnableNotifications}
+              onClick={nativePushTemporarilyDisabled ? undefined : handleEnableNotifications}
+              disabled={nativePushTemporarilyDisabled}
               style={{
                 background: 'none',
-                border: `1px solid ${notificationPermission === 'granted' ? '#FF6B35' : (isLight ? '#E5E5E5' : '#222')}`,
+                border: `1px solid ${notificationPermission === 'granted' ? '#FF6B35' : isLight ? '#E5E5E5' : '#222'}`,
                 borderRadius: 8,
                 padding: '7px 9px',
-                color: notificationPermission === 'granted' ? '#FF8A5C' : (isLight ? '#444' : '#555'),
+                color: notificationPermission === 'granted' ? '#FF8A5C' : isLight ? '#444' : '#555',
                 fontFamily: "'DM Sans', sans-serif",
                 fontSize: 11,
-                cursor: 'pointer',
+                cursor: nativePushTemporarilyDisabled ? 'default' : 'pointer',
+                opacity: nativePushTemporarilyDisabled ? 0.6 : 1,
                 fontWeight: 700,
               }}
-              title="Enable reminders for saved events"
+              title={
+                nativePushTemporarilyDisabled
+                  ? 'Alerts temporarily unavailable on Android build'
+                  : 'Enable reminders for saved events'
+              }
             >
               {notificationPermission === 'granted' ? 'Alerts On' : 'Alerts'}
             </button>
@@ -895,8 +1186,18 @@ function AppInner() {
               </button>
             )}
             <button
-              onClick={() => user ? setShowPost(true) : setShowAuth(true)}
-              style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '8px 10px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 14, letterSpacing: 1.2, cursor: 'pointer' }}
+              onClick={() => (user ? setShowPost(true) : setShowAuth(true))}
+              style={{
+                background: '#FF6B35',
+                color: '#0A0A0A',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 10px',
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 14,
+                letterSpacing: 1.2,
+                cursor: 'pointer',
+              }}
             >
               + POST
             </button>
@@ -905,26 +1206,59 @@ function AppInner() {
 
         {/* Search */}
         <div style={{ position: 'relative', marginBottom: 9 }}>
-          <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, pointerEvents: 'none' }}>🔍</span>
+          <span
+            style={{
+              position: 'absolute',
+              left: 11,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              fontSize: 13,
+              pointerEvents: 'none',
+            }}
+          >
+            🔍
+          </span>
           <input
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search events, city, tags..."
-            style={{ width: '100%', background: isLight ? '#FFFFFF' : '#111', border: `1px solid ${isLight ? '#E5E5E5' : '#1A1A1A'}`, borderRadius: 8, padding: '9px 12px 9px 33px', color: isLight ? '#222' : '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 13 }}
+            style={{
+              width: '100%',
+              background: isLight ? '#FFFFFF' : '#111',
+              border: `1px solid ${isLight ? '#E5E5E5' : '#1A1A1A'}`,
+              borderRadius: 8,
+              padding: '9px 12px 9px 33px',
+              color: isLight ? '#222' : '#F0F0F0',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 13,
+            }}
           />
         </div>
 
         {/* Filter chips + past toggle */}
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', overflowX: 'visible', paddingBottom: 2, alignItems: 'center' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 7,
+            flexWrap: 'wrap',
+            overflowX: 'visible',
+            paddingBottom: 2,
+            alignItems: 'center',
+          }}
+        >
           {/* All Events */}
           <button
             onClick={() => setFilterType('all')}
             style={{
               background: filterType === 'all' ? '#FF6B35' : filterChipBg,
               color: filterType === 'all' ? '#0A0A0A' : filterChipText,
-              border: '1px solid', borderColor: filterType === 'all' ? '#FF6B35' : filterChipBorder,
-              borderRadius: 20, padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              border: '1px solid',
+              borderColor: filterType === 'all' ? '#FF6B35' : filterChipBorder,
+              borderRadius: 20,
+              padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
               cursor: 'pointer',
             }}
           >
@@ -940,9 +1274,13 @@ function AppInner() {
             style={{
               background: nearMeOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
               color: nearMeOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
-              border: '1px solid', borderColor: nearMeOnly ? '#FF6B35' : filterChipBorder,
-              borderRadius: 20, padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              border: '1px solid',
+              borderColor: nearMeOnly ? '#FF6B35' : filterChipBorder,
+              borderRadius: 20,
+              padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
               cursor: 'pointer',
               textTransform: 'uppercase',
               letterSpacing: 0.5,
@@ -952,17 +1290,22 @@ function AppInner() {
           </button>
 
           {/* Other type filters */}
-          {['meet', 'car show', 'track day', 'cruise'].map(type => (
+          {['meet', 'car show', 'track day', 'cruise'].map((type) => (
             <button
               key={type}
               onClick={() => setFilterType(type)}
               style={{
                 background: filterType === type ? '#FF6B35' : filterChipBg,
                 color: filterType === type ? '#0A0A0A' : filterChipText,
-                border: '1px solid', borderColor: filterType === type ? '#FF6B35' : filterChipBorder,
-                borderRadius: 20, padding: '5px 13px',
-                fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
-                cursor: 'pointer', textTransform: 'capitalize',
+                border: '1px solid',
+                borderColor: filterType === type ? '#FF6B35' : filterChipBorder,
+                borderRadius: 20,
+                padding: '5px 13px',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textTransform: 'capitalize',
               }}
             >
               {type}
@@ -971,61 +1314,50 @@ function AppInner() {
 
           {/* Past events toggle */}
           <button
-            onClick={() => setShowPast(p => !p)}
+            onClick={() => setShowPast((p) => !p)}
             style={{
               background: showPast ? '#333' : filterChipBg,
               color: showPast ? '#aaa' : '#444',
-              border: '1px solid', borderColor: showPast ? '#444' : filterChipBorder,
-              borderRadius: 20, padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              border: '1px solid',
+              borderColor: showPast ? '#444' : filterChipBorder,
+              borderRadius: 20,
+              padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
               cursor: 'pointer',
             }}
           >
             {showPast ? '✓ Past Events' : 'Past Events'}
           </button>
           <button
-            onClick={() => setShowSavedOnly(p => !p)}
+            onClick={() => setShowSavedOnly((p) => !p)}
             style={{
               background: showSavedOnly ? '#26140E' : filterChipBg,
               color: showSavedOnly ? '#FF8A5C' : '#444',
-              border: '1px solid', borderColor: showSavedOnly ? '#FF6B35' : filterChipBorder,
-              borderRadius: 20, padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
+              border: '1px solid',
+              borderColor: showSavedOnly ? '#FF6B35' : filterChipBorder,
+              borderRadius: 20,
+              padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
               cursor: 'pointer',
             }}
           >
             {showSavedOnly ? `★ Saved (${savedEventIds.length})` : 'Saved'}
           </button>
-          <button
-            onClick={() => setShowCanceled(p => !p)}
-            style={{
-              background: showCanceled ? '#2A1010' : filterChipBg,
-              color: showCanceled ? '#FF7A7A' : '#444',
-              border: '1px solid', borderColor: showCanceled ? '#FF6060' : filterChipBorder,
-              borderRadius: 20, padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {showCanceled ? '✓ Show Canceled' : 'Show Canceled'}
-          </button>
-          <button
-            onClick={() => setShowGoingOnly(p => !p)}
-            style={{
-              background: showGoingOnly ? '#0F2412' : filterChipBg,
-              color: showGoingOnly ? '#9BFF8E' : '#444',
-              border: '1px solid', borderColor: showGoingOnly ? '#7CFF6B' : filterChipBorder,
-              borderRadius: 20, padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif", fontSize: 12, fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {showGoingOnly ? '✓ Going Only' : 'Going Only'}
-          </button>
         </div>
 
         {nearMeError && (
-          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#FF9944', marginTop: 6 }}>
+          <div
+            style={{
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              color: '#FF9944',
+              marginTop: 6,
+            }}
+          >
             {nearMeError}
           </div>
         )}
@@ -1035,8 +1367,11 @@ function AppInner() {
       {view === 'map' && (
         <div className="fade-up">
           <MapView
-            events={eventsForDisplay}
-            onSelectEvent={e => { setMapSelected(e); setSelectedEvent(e) }}
+            events={eventsForCurrentView}
+            onSelectEvent={(e) => {
+              setMapSelected(e)
+              setSelectedEvent(e)
+            }}
             centerOn={nearMeOnly ? nearMeCoords : null}
             bottomNavHeight={BOTTOM_NAV_HEIGHT}
           />
@@ -1044,7 +1379,7 @@ function AppInner() {
       )}
 
       {/* ── LIST VIEW ── */}
-      {view === 'list' && (
+      {(view === 'list' || view === 'mine') && (
         <div
           className="fade-up"
           style={{
@@ -1057,15 +1392,44 @@ function AppInner() {
           {loading ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: '#333' }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>⚙️</div>
-              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13 }}>Loading events...</div>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13 }}>
+                Loading events...
+              </div>
             </div>
           ) : loadError ? (
             <div style={{ textAlign: 'center', padding: '60px 20px' }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: '#FF6B35', letterSpacing: 1, marginBottom: 8 }}>CONNECTION ERROR</div>
-              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#555', marginBottom: 12 }}>Could not load events.</div>
+              <div
+                style={{
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 22,
+                  color: '#FF6B35',
+                  letterSpacing: 1,
+                  marginBottom: 8,
+                }}
+              >
+                CONNECTION ERROR
+              </div>
+              <div
+                style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 13,
+                  color: '#555',
+                  marginBottom: 12,
+                }}
+              >
+                Could not load events.
+              </div>
               {loadErrorMessage && (
-                <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: '#B00020', marginBottom: 16, whiteSpace: 'pre-wrap' }}>
+                <div
+                  style={{
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: 12,
+                    color: '#B00020',
+                    marginBottom: 16,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
                   {loadErrorMessage}
                 </div>
               )}
@@ -1075,32 +1439,90 @@ function AppInner() {
                   setLoadErrorMessage('')
                   loadEvents()
                 }}
-                style={{ background: '#FF6B35', color: '#0A0A0A', border: 'none', borderRadius: 8, padding: '10px 24px', fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, cursor: 'pointer' }}
+                style={{
+                  background: '#FF6B35',
+                  color: '#0A0A0A',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '10px 24px',
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 16,
+                  letterSpacing: 1,
+                  cursor: 'pointer',
+                }}
               >
                 RETRY
               </button>
             </div>
-          ) : eventsForDisplay.length === 0 ? (
+          ) : eventsForCurrentView.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#333' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🚗</div>
-              <div style={{ fontSize: 22, letterSpacing: 1, marginBottom: 6 }}>NO EVENTS YET</div>
-              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#444' }}>Be the first to post a meet in your area!</div>
+              <div style={{ fontSize: 22, letterSpacing: 1, marginBottom: 6 }}>
+                {view === 'mine' ? 'NO POSTS YET' : 'NO EVENTS YET'}
+              </div>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#444' }}>
+                {view === 'mine'
+                  ? 'Your posted meets will show up here.'
+                  : 'Be the first to post a meet in your area!'}
+              </div>
             </div>
           ) : (
             <>
-              {!debouncedSearchQuery && filterType === 'all' && eventsForDisplay.some(e => e.featured) && (
-                <div style={{ marginBottom: 4 }}>
-                  <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#FF6B35', letterSpacing: 2, marginBottom: 8 }}>⭐ FEATURED</div>
-                  {eventsForDisplay.filter(e => e.featured).map(e => (
-                    <EventCard key={e.id} event={e} saved={savedEventIds.includes(e.id)} onToggleSaved={handleToggleSaved} onClick={() => setSelectedEvent(e)} />
-                  ))}
-                  <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#444', letterSpacing: 2, marginBottom: 8, marginTop: 14 }}>ALL EVENTS</div>
-                </div>
-              )}
-              {eventsForDisplay
-                .filter(e => (debouncedSearchQuery || filterType !== 'all') ? true : !e.featured)
-                .map(e => (
-                  <EventCard key={e.id} event={e} saved={savedEventIds.includes(e.id)} onToggleSaved={handleToggleSaved} onClick={() => setSelectedEvent(e)} />
+              {!debouncedSearchQuery &&
+                filterType === 'all' &&
+                view !== 'mine' &&
+                eventsForCurrentView.some((e) => e.featured) && (
+                  <div style={{ marginBottom: 4 }}>
+                    <div
+                      style={{
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontSize: 11,
+                        color: '#FF6B35',
+                        letterSpacing: 2,
+                        marginBottom: 8,
+                      }}
+                    >
+                      ⭐ FEATURED
+                    </div>
+                    {eventsForCurrentView
+                      .filter((e) => e.featured)
+                      .map((e) => (
+                        <EventCard
+                          key={e.id}
+                          event={e}
+                          saved={savedEventIds.includes(e.id)}
+                          onToggleSaved={handleToggleSaved}
+                          onClick={() => setSelectedEvent(e)}
+                        />
+                      ))}
+                    <div
+                      style={{
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontSize: 11,
+                        color: '#444',
+                        letterSpacing: 2,
+                        marginBottom: 8,
+                        marginTop: 14,
+                      }}
+                    >
+                      ALL EVENTS
+                    </div>
+                  </div>
+                )}
+              {eventsForCurrentView
+                .filter((e) =>
+                  debouncedSearchQuery || filterType !== 'all' || view === 'mine'
+                    ? true
+                    : !e.featured,
+                )
+                .map((e) => (
+                  <EventCard
+                    key={e.id}
+                    event={e}
+                    saved={savedEventIds.includes(e.id)}
+                    onToggleSaved={handleToggleSaved}
+                    onClick={() => setSelectedEvent(e)}
+                  />
                 ))}
             </>
           )}
@@ -1108,24 +1530,52 @@ function AppInner() {
       )}
 
       {/* ── BOTTOM NAV ── */}
-      <div style={{
-        position: 'fixed', bottom: 'env(safe-area-inset-bottom)', left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 480, background: isLight ? '#F6F6F6' : '#0A0A0A',
-        borderTop: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`, display: 'flex',
-        justifyContent: 'space-around', padding: '10px 0 20px', zIndex: 200,
-      }}>
-        {[{ id: 'list', icon: '☰', label: 'LIST' }, { id: 'map', icon: '🗺', label: 'MAP' }].map(nav => (
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 'env(safe-area-inset-bottom)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '100%',
+          maxWidth: 480,
+          background: isLight ? '#F6F6F6' : '#0A0A0A',
+          borderTop: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
+          display: 'flex',
+          justifyContent: 'space-around',
+          padding: '10px 0 20px',
+          zIndex: 200,
+        }}
+      >
+        {[
+          { id: 'list', icon: '☰', label: 'LIST' },
+          { id: 'map', icon: '🗺', label: 'MAP' },
+          ...(user ? [{ id: 'mine', icon: '👤', label: 'MY POSTS' }] : []),
+        ].map((nav) => (
           <button
             key={nav.id}
             onClick={() => setView(nav.id)}
             style={{
-              background: 'none', border: 'none',
+              background: 'none',
+              border: 'none',
               color: view === nav.id ? '#FF6B35' : '#3A3A3A',
-              cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 2,
             }}
           >
             <span style={{ fontSize: 22 }}>{nav.icon}</span>
-            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, fontWeight: 600, letterSpacing: 1 }}>{nav.label}</span>
+            <span
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: 1,
+              }}
+            >
+              {nav.label}
+            </span>
           </button>
         ))}
       </div>
@@ -1143,7 +1593,12 @@ function AppInner() {
           onUpdateImport={handleUpdateImport}
           requiresAuth={!user}
           errorMessage={importError}
-          showUpload={!!importParams && !!importError && (String(importError).includes('robots.txt') || String(importError).includes('Could not fetch image'))}
+          showUpload={
+            !!importParams &&
+            !!importError &&
+            (String(importError).includes('robots.txt') ||
+              String(importError).includes('Could not fetch image'))
+          }
           uploading={importUploading}
           onPickUpload={handleUploadFlyer}
           onClose={() => setShowImportQueue(false)}
@@ -1168,7 +1623,7 @@ function AppInner() {
           onAuthNeeded={handleAuthNeeded}
           onUpdated={handleUpdated}
           onDeleted={(id) => {
-            setEvents(prev => prev.filter(e => e.id !== id))
+            setEvents((prev) => prev.filter((e) => e.id !== id))
             setSelectedEvent(null)
           }}
         />

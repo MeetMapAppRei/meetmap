@@ -21,4 +21,3 @@ export const formatEventTime = (timeStr) => {
 
   return `${h12}:${mm} ${period}`
 }
-

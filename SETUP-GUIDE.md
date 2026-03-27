@@ -1,9 +1,11 @@
 # 🚗 MEET MAP — Complete Setup Guide
+
 ### For beginners — step by step, no experience needed
 
 ---
 
 ## WHAT YOU'LL NEED (all free)
+
 - A computer with internet
 - A free Supabase account (your database + login + photo storage)
 - A free Mapbox account (your live map)
@@ -32,6 +34,7 @@ Estimated time: ~30–45 minutes
 4. Wait ~2 minutes for it to set up
 
 ### Run the database setup:
+
 5. In your Supabase project, click **"SQL Editor"** in the left sidebar
 6. Click **"New query"**
 7. Open the file `supabase-schema.sql` from this project folder
@@ -39,6 +42,7 @@ Estimated time: ~30–45 minutes
 9. Click **"Run"** (green button) — you should see "Success"
 
 ### Get your API keys:
+
 10. In Supabase, click **"Settings"** (gear icon, left sidebar) → **"API"**
 11. Copy the **"Project URL"** — looks like `https://abcxyz.supabase.co`
 12. Copy the **"anon public"** key — a long string of letters and numbers
@@ -63,18 +67,23 @@ Estimated time: ~30–45 minutes
 
 1. Open **Terminal** (Mac) or **Command Prompt** (Windows)
 2. Navigate to the project folder. For example:
+
    ```
    cd Downloads/meetmap
    ```
+
    (adjust the path to wherever you saved the project folder)
 
 3. Install dependencies — type this and press Enter:
+
    ```
    npm install
    ```
+
    Wait for it to finish (~1-2 minutes)
 
 4. Start the app — type this and press Enter:
+
    ```
    npm run dev
    ```
@@ -105,17 +114,21 @@ Estimated time: ~30–45 minutes
 ## TROUBLESHOOTING
 
 **"Cannot find module" error when running npm install:**
+
 - Make sure you're in the right folder (the one containing `package.json`)
 
 **Map not showing up:**
+
 - Double-check your Mapbox token in `src/components/MapView.jsx`
 - Make sure there are no extra spaces when you pasted it
 
 **Events not loading / login not working:**
+
 - Double-check your Supabase URL and key in `src/lib/supabase.js`
 - Make sure you ran the SQL schema — go back to Supabase SQL Editor and run it again
 
 **Photos not uploading:**
+
 - In Supabase, go to **Storage** in the left sidebar
 - Make sure a bucket called `event-photos` exists
 - If not, run the last section of `supabase-schema.sql` again
@@ -149,11 +162,11 @@ meetmap/
 
 ## COSTS (everything used here is free)
 
-| Service  | Free tier                          | Paid starts at |
-|----------|------------------------------------|----------------|
-| Supabase | 500MB DB, 1GB storage, 50K users   | $25/mo         |
-| Mapbox   | 50,000 map loads/month             | $5/mo          |
-| Vercel   | Unlimited hobby projects           | $20/mo         |
+| Service  | Free tier                        | Paid starts at |
+| -------- | -------------------------------- | -------------- |
+| Supabase | 500MB DB, 1GB storage, 50K users | $25/mo         |
+| Mapbox   | 50,000 map loads/month           | $5/mo          |
+| Vercel   | Unlimited hobby projects         | $20/mo         |
 
 For a local car meet app, you'll likely **never need to pay** unless it gets very popular.
 
@@ -162,6 +175,7 @@ For a local car meet app, you'll likely **never need to pay** unless it gets ver
 ## QUESTIONS?
 
 If you get stuck, the most helpful places are:
+
 - **Supabase docs**: docs.supabase.com
 - **Mapbox docs**: docs.mapbox.com/mapbox-gl-js
 - **Vite docs**: vitejs.dev

@@ -1,11 +1,14 @@
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0
 
-const isValidLatLng = (lat, lng) =>
-  Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+const isValidLatLng = (lat, lng) => Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
 
 const getTagCount = (tags) => {
-  if (Array.isArray(tags)) return tags.filter(t => isNonEmptyString(t)).length
-  if (typeof tags === 'string') return tags.split(',').map(t => t.trim()).filter(Boolean).length
+  if (Array.isArray(tags)) return tags.filter((t) => isNonEmptyString(t)).length
+  if (typeof tags === 'string')
+    return tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean).length
   return 0
 }
 
@@ -32,4 +35,3 @@ export const getEventQuality = (event) => {
   }
   return { score, label: 'Needs Details', fg: '#FF6060', bg: '#FF353522', short: 'NEEDS INFO' }
 }
-

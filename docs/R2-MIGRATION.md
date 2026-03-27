@@ -20,9 +20,9 @@ Keep **Supabase** for Postgres + Auth unless you have another reason to move the
 ### 2. Enable public access (read)
 
 1. Open the bucket → **Settings**.
-2. Under **Public access**, enable **R2.dev subdomain** *or* connect a **custom domain** (e.g. `cdn.yourdomain.com`).
-3. Copy the **public URL base** (example: `https://pub-xxxxxxxxxxxx.r2.dev`).  
-   - No trailing slash.  
+2. Under **Public access**, enable **R2.dev subdomain** _or_ connect a **custom domain** (e.g. `cdn.yourdomain.com`).
+3. Copy the **public URL base** (example: `https://pub-xxxxxxxxxxxx.r2.dev`).
+   - No trailing slash.
    - This becomes `R2_PUBLIC_BASE_URL`.
 
 ### 3. CORS (required for browser uploads)
@@ -62,15 +62,15 @@ Add your **Capacitor / production** web origin if different. Without CORS, the b
 
 In **Vercel** → your project → **Settings** → **Environment Variables**, add:
 
-| Name | Value |
-|------|--------|
-| `R2_ACCOUNT_ID` | Cloudflare account id |
-| `R2_ACCESS_KEY_ID` | R2 token access key |
-| `R2_SECRET_ACCESS_KEY` | R2 token secret |
-| `R2_BUCKET_NAME` | e.g. `meetmap-media` |
-| `R2_PUBLIC_BASE_URL` | Public base URL (no trailing `/`) |
-| `SUPABASE_URL` | Same as `VITE_SUPABASE_URL` |
-| `SUPABASE_ANON_KEY` | Same as `VITE_SUPABASE_ANON_KEY` |
+| Name                   | Value                             |
+| ---------------------- | --------------------------------- |
+| `R2_ACCOUNT_ID`        | Cloudflare account id             |
+| `R2_ACCESS_KEY_ID`     | R2 token access key               |
+| `R2_SECRET_ACCESS_KEY` | R2 token secret                   |
+| `R2_BUCKET_NAME`       | e.g. `meetmap-media`              |
+| `R2_PUBLIC_BASE_URL`   | Public base URL (no trailing `/`) |
+| `SUPABASE_URL`         | Same as `VITE_SUPABASE_URL`       |
+| `SUPABASE_ANON_KEY`    | Same as `VITE_SUPABASE_ANON_KEY`  |
 
 Redeploy after saving.
 

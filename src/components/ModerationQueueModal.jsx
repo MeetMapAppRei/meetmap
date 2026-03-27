@@ -47,23 +47,57 @@ export default function ModerationQueueModal({
           flexDirection: 'column',
         }}
       >
-        <div style={{ padding: '14px 16px', borderBottom: `1px solid ${btnBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div
+          style={{
+            padding: '14px 16px',
+            borderBottom: `1px solid ${btnBorder}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
           <div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1.8, color: '#FF6B35' }}>
+            <div
+              style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 22,
+                letterSpacing: 1.8,
+                color: '#FF6B35',
+              }}
+            >
               MODERATION QUEUE
             </div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: textMuted }}>
-              {loading ? 'Loading…' : `${pendingCount} pending report${pendingCount === 1 ? '' : 's'}`}
+              {loading
+                ? 'Loading…'
+                : `${pendingCount} pending report${pendingCount === 1 ? '' : 's'}`}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: isLight ? '#666' : '#fff', fontSize: 26, cursor: 'pointer', padding: 6 }}>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: isLight ? '#666' : '#fff',
+              fontSize: 26,
+              cursor: 'pointer',
+              padding: 6,
+            }}
+          >
             ×
           </button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {!loading && (!reports || reports.length === 0) ? (
-            <div style={{ textAlign: 'center', padding: '36px 10px', color: textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '36px 10px',
+                color: textMuted,
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
               No pending reports.
             </div>
           ) : (
@@ -76,38 +110,117 @@ export default function ModerationQueueModal({
                 const createdAt = r?.created_at ? new Date(r.created_at).toLocaleString() : ''
 
                 return (
-                  <div key={r.id} style={{ border: `1px solid ${btnBorder}`, borderRadius: 12, background: btnBg, padding: 12 }}>
+                  <div
+                    key={r.id}
+                    style={{
+                      border: `1px solid ${btnBorder}`,
+                      borderRadius: 12,
+                      background: btnBg,
+                      padding: 12,
+                    }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <div style={{ width: 72, height: 72, flexShrink: 0, borderRadius: 10, overflow: 'hidden', background: btnBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', color: textMuted }}>
+                      <div
+                        style={{
+                          width: 72,
+                          height: 72,
+                          flexShrink: 0,
+                          borderRadius: 10,
+                          overflow: 'hidden',
+                          background: btnBorder,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: textMuted,
+                        }}
+                      >
                         {r?.events?.photo_url ? (
-                          <img src={r.events.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <img
+                            src={r.events.photo_url}
+                            alt=""
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
                         ) : (
                           '🚩'
                         )}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 900, color: isLight ? '#111' : '#F0F0F0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div
+                          style={{
+                            fontFamily: "'DM Sans', sans-serif",
+                            fontSize: 14,
+                            fontWeight: 900,
+                            color: isLight ? '#111' : '#F0F0F0',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
                           {eventTitle}
                         </div>
-                        <div style={{ marginTop: 4, fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: textMuted }}>
-                          Reporter: <span style={{ color: isLight ? '#444' : '#ddd', fontWeight: 700 }}>{reporter}</span>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontFamily: "'DM Sans', sans-serif",
+                            fontSize: 12,
+                            color: textMuted,
+                          }}
+                        >
+                          Reporter:{' '}
+                          <span style={{ color: isLight ? '#444' : '#ddd', fontWeight: 700 }}>
+                            {reporter}
+                          </span>
                         </div>
-                        <div style={{ marginTop: 4, fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: textMuted }}>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontFamily: "'DM Sans', sans-serif",
+                            fontSize: 11,
+                            color: textMuted,
+                          }}
+                        >
                           {createdAt}
                         </div>
-                        <div style={{ marginTop: 8, fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#FF8A5C', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontFamily: "'DM Sans', sans-serif",
+                            fontSize: 11,
+                            color: '#FF8A5C',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: 0.4,
+                          }}
+                        >
                           {reason}
                         </div>
                       </div>
                     </div>
 
                     {details ? (
-                      <div style={{ marginTop: 10, fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: isLight ? '#555' : '#ddd', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontFamily: "'DM Sans', sans-serif",
+                          fontSize: 12,
+                          color: isLight ? '#555' : '#ddd',
+                          lineHeight: 1.45,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
                         {details}
                       </div>
                     ) : null}
 
-                    <div style={{ marginTop: 12, display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    <div
+                      style={{
+                        marginTop: 12,
+                        display: 'flex',
+                        gap: 10,
+                        justifyContent: 'flex-end',
+                        flexWrap: 'wrap',
+                      }}
+                    >
                       <button
                         disabled={resolvingReportId === r.id}
                         onClick={() => onResolve?.(r.id, 'resolved')}
@@ -153,4 +266,3 @@ export default function ModerationQueueModal({
     </div>
   )
 }
-

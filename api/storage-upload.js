@@ -64,7 +64,8 @@ export default async function handler(req, res) {
 
   const bucket = process.env.R2_BUCKET_NAME
   const client = r2Client()
-  if (!client || !bucket) return res.status(503).json({ error: 'R2 storage is not configured on the server' })
+  if (!client || !bucket)
+    return res.status(503).json({ error: 'R2 storage is not configured on the server' })
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {}
@@ -73,7 +74,8 @@ export default async function handler(req, res) {
     const base64Data = String(body.base64Data || '')
 
     if (!key || !base64Data) return res.status(400).json({ error: 'Missing key or base64Data' })
-    if (!isAllowedKeyForUser(key, user.id)) return res.status(403).json({ error: 'Invalid key for user' })
+    if (!isAllowedKeyForUser(key, user.id))
+      return res.status(403).json({ error: 'Invalid key for user' })
 
     if (key.startsWith('events/')) {
       const parts = key.split('/')
@@ -81,11 +83,13 @@ export default async function handler(req, res) {
       if (!UUID_RE.test(eid)) return res.status(400).json({ error: 'Invalid event key' })
     } else if (key.startsWith('flyer-imports/')) {
       const uid = key.split('/')[1] || ''
-      if (!UUID_RE.test(uid) || uid !== user.id) return res.status(403).json({ error: 'Invalid flyer-import key' })
+      if (!UUID_RE.test(uid) || uid !== user.id)
+        return res.status(403).json({ error: 'Invalid flyer-import key' })
     }
 
     const bytes = Buffer.from(base64Data, 'base64')
-    if (!bytes || bytes.length === 0) return res.status(400).json({ error: 'Invalid image payload' })
+    if (!bytes || bytes.length === 0)
+      return res.status(400).json({ error: 'Invalid image payload' })
 
     await client.send(
       new PutObjectCommand({

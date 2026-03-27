@@ -35,10 +35,12 @@ export function apiUrlCandidates(path) {
   const primary = apiUrl(p)
   const bases = [
     primary.startsWith('http') ? primary : null,
-    typeof window !== 'undefined' && primary.startsWith('/') ? `${window.location.origin}${primary}` : null,
-    'https://findcarmeets.com',
-    'https://www.findcarmeets.com',
-    'https://meetmap-gilt.vercel.app',
+    typeof window !== 'undefined' && primary.startsWith('/')
+      ? `${window.location.origin}${primary}`
+      : null,
+    `https://findcarmeets.com${p}`,
+    `https://www.findcarmeets.com${p}`,
+    `https://meetmap-gilt.vercel.app${p}`,
   ].filter(Boolean)
   return [...new Set(bases)]
 }

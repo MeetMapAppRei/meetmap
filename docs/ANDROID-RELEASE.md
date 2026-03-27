@@ -1,6 +1,6 @@
 # Android release (Play Console)
 
-Google Play accepts each **`versionCode` only once** for the whole app. If upload says *"Version code X has already been used"*, bump to **X + 1** and upload a new signed AAB.
+Google Play accepts each **`versionCode` only once** for the whole app. If upload says _"Version code X has already been used"_, bump to **X + 1** and upload a new signed AAB.
 
 ## Before every new Play upload
 

@@ -90,7 +90,10 @@ async function main() {
 
   console.log(DRY ? '--- DRY RUN (no R2 writes, no DB updates) ---' : '--- LIVE MIGRATION ---')
 
-  const { data: events, error: e1 } = await sb.from('events').select('id, photo_url').not('photo_url', 'is', null)
+  const { data: events, error: e1 } = await sb
+    .from('events')
+    .select('id, photo_url')
+    .not('photo_url', 'is', null)
   if (e1) throw e1
 
   let evCount = 0
@@ -130,7 +133,10 @@ async function main() {
       const newUrl = await copyUrlToR2(client, bucket, publicBase, key, u)
       console.log(`Flyer import ${row.id}: migrated -> ${newUrl}`)
       if (!DRY) {
-        const { error } = await sb.from('flyer_imports').update({ image_url: newUrl }).eq('id', row.id)
+        const { error } = await sb
+          .from('flyer_imports')
+          .update({ image_url: newUrl })
+          .eq('id', row.id)
         if (error) throw error
       }
       imCount++

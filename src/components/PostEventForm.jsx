@@ -1,17 +1,39 @@
 import { useState, useRef, useEffect } from 'react'
-import { createEvent, uploadEventPhoto } from '../lib/supabase'
+import { createEvent, uploadEventPhoto, supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { compressImageForUpload } from '../lib/compressImageForUpload'
+import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
 
 function isTransientNetworkError(e) {
-  const m = String(e?.message || e?.error_description || e?.cause?.message || e || '')
+  const m = String(
+    e?.message ||
+      e?.error_description ||
+      e?.cause?.message ||
+      e?.details ||
+      e?.hint ||
+      e?.status ||
+      e?.statusCode ||
+      e?.code ||
+      e ||
+      '',
+  )
   // Supabase / fetch / WebView often surface as TypeError, empty body, or gateway errors.
-  return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504|econnreset|etimedout|socket|connection refused|fetch/i.test(
+  return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504|econnreset|etimedout|socket|connection refused|eai_again|enotfound|econnrefused|tls|gateway/i.test(
     m,
   )
+}
+
+function buildGeocodeQuery(address, city) {
+  const a = String(address || '').trim()
+  const c = String(city || '').trim()
+  if (!a) return ''
+  // If the address already contains a comma (often includes city/state), don't double-append.
+  if (!c) return a
+  if (a.includes(',')) return a
+  return `${a}, ${c}`
 }
 
 async function withNetworkRetries(fn, attempts = 5) {
@@ -20,7 +42,8 @@ async function withNetworkRetries(fn, attempts = 5) {
     try {
       if (i > 0) {
         const jitter = Math.floor(Math.random() * 400)
-        await new Promise((r) => setTimeout(r, 600 * i + jitter))
+        // Backoff helps on mobile when the first request hits a cold start / brief outage.
+        await new Promise((r) => setTimeout(r, 900 * i + jitter))
       }
       return await fn()
     } catch (e) {
@@ -31,15 +54,112 @@ async function withNetworkRetries(fn, attempts = 5) {
   throw last
 }
 
-const S = {
-  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 600, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
-  sheet: { width: '100%', maxWidth: 480, background: '#0F0F0F', borderRadius: '20px 20px 0 0', border: '1px solid #1A1A1A', maxHeight: '92vh', overflowY: 'auto', padding: '24px 20px 48px', animation: 'slideUp 0.3s ease' },
-  label: { fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#555', letterSpacing: 1, display: 'block', marginBottom: 5, textTransform: 'uppercase' },
-  input: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark' },
-  select: { width: '100%', background: '#141414', border: '1px solid #222', borderRadius: 8, padding: '11px 13px', color: '#F0F0F0', fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', marginBottom: 14, colorScheme: 'dark', appearance: 'none' },
+async function deleteEventBestEffort(eventId) {
+  if (!eventId) return
+  // Best-effort cleanup for cases where the event row was created but the client failed later.
+  // If FKs are configured with `on delete cascade`, these extra deletes are harmless.
+  const deleteTables = [
+    'comments',
+    'event_updates',
+    'event_statuses',
+    'event_attendees',
+    'saved_events',
+  ]
+  await Promise.all(
+    deleteTables.map(async (t) => {
+      try {
+        await supabase.from(t).delete().eq('event_id', eventId)
+      } catch {}
+    }),
+  )
+  try {
+    await supabase.from('events').delete().eq('id', eventId)
+  } catch {}
 }
 
-async function postExtractFlyer(endpoint, imageBase64, mediaType = "image/jpeg") {
+function makeClientUuid() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  } catch {}
+  // Fallback for older environments: generate UUID v4.
+  const bytes = new Uint8Array(16)
+  try {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes)
+    else {
+      for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+    }
+  } catch {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  }
+  // Per RFC 4122 section 4.4.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+const S = {
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.9)',
+    zIndex: 600,
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 480,
+    background: '#0F0F0F',
+    borderRadius: '20px 20px 0 0',
+    border: '1px solid #1A1A1A',
+    maxHeight: '92vh',
+    overflowY: 'auto',
+    padding: '24px 20px 48px',
+    animation: 'slideUp 0.3s ease',
+  },
+  label: {
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 11,
+    color: '#555',
+    letterSpacing: 1,
+    display: 'block',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+  input: {
+    width: '100%',
+    background: '#141414',
+    border: '1px solid #222',
+    borderRadius: 8,
+    padding: '11px 13px',
+    color: '#F0F0F0',
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 14,
+    outline: 'none',
+    marginBottom: 14,
+    colorScheme: 'dark',
+  },
+  select: {
+    width: '100%',
+    background: '#141414',
+    border: '1px solid #222',
+    borderRadius: 8,
+    padding: '11px 13px',
+    color: '#F0F0F0',
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 14,
+    outline: 'none',
+    marginBottom: 14,
+    colorScheme: 'dark',
+    appearance: 'none',
+  },
+}
+
+async function postExtractFlyer(endpoint, imageBase64, mediaType = 'image/jpeg') {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const timeout = controller ? setTimeout(() => controller.abort(), 35000) : null
   let response
@@ -47,6 +167,9 @@ async function postExtractFlyer(endpoint, imageBase64, mediaType = "image/jpeg")
     response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // Reduce caching oddities; also avoid sending cookies to third-party endpoints.
+      cache: 'no-store',
+      credentials: 'omit',
       body: JSON.stringify({
         imageBase64,
         mediaType,
@@ -59,7 +182,7 @@ async function postExtractFlyer(endpoint, imageBase64, mediaType = "image/jpeg")
   return response
 }
 
-async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
+async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg') {
   const candidates = [
     apiUrl('/api/extract-flyer'),
     'https://findcarmeets.com/api/extract-flyer',
@@ -72,12 +195,49 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
   for (const endpoint of endpoints) {
     try {
       response = await postExtractFlyer(endpoint, imageBase64, mediaType)
-      // If endpoint responded at all, parse result (even if non-200) and stop trying others.
-      break
+      if (response.ok) break
+
+      // If the server responded with a transient 5xx, try the next endpoint.
+      // This avoids "first endpoint was temporarily broken" failures.
+      const status = response.status
+      const statusText = response.statusText
+      const contentType = response.headers.get('content-type') || ''
+      const rawText = await response.text()
+      let data = {}
+      try {
+        data = rawText ? JSON.parse(rawText) : {}
+      } catch {
+        data = {}
+      }
+
+      const err =
+        data?.error?.message ||
+        data?.error ||
+        data?.message ||
+        (status === 413 ? 'Flyer image is too large. Try a smaller/cropped image.' : '') ||
+        statusText ||
+        `Request failed (${status})`
+
+      const transient5xx = [502, 503, 504, 520, 521, 522, 524].includes(status)
+      const transientByBody = /bad gateway|temporarily|timeout|upstream|gateway/i.test(
+        String(err || ''),
+      )
+
+      if (transient5xx || transientByBody) {
+        lastNetworkError = new Error(err)
+        continue
+      }
+
+      // Non-transient error: stop and surface it.
+      const preview = (rawText || JSON.stringify(data) || '').replace(/\s+/g, ' ').slice(0, 220)
+      throw new Error(
+        contentType?.includes('json') ? err : `${err}${preview ? ` (Response: ${preview})` : ''}`,
+      )
     } catch (e) {
       lastNetworkError = e
       const msg = String(e?.message || '')
-      const retryableNetwork = /failed to fetch|networkerror|load failed|network request failed|abort|timeout/i.test(msg)
+      const retryableNetwork =
+        /failed to fetch|networkerror|load failed|network request failed|abort|timeout/i.test(msg)
       if (!retryableNetwork) throw e
     }
   }
@@ -87,7 +247,8 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
   }
 
   const responseUrl = response.url || ''
-  const isFallback = responseUrl.includes('findcarmeets.com') || responseUrl.includes('meetmap-gilt.vercel.app')
+  const isFallback =
+    responseUrl.includes('findcarmeets.com') || responseUrl.includes('meetmap-gilt.vercel.app')
   const status = response.status
   const statusText = response.statusText
   const contentType = response.headers.get('content-type') || ''
@@ -111,15 +272,15 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = "image/jpeg") {
   }
 
   if (!('extracted' in (data || {})) || data?.extracted == null) {
-    const preview = (rawText || JSON.stringify(data) || '')
-      .replace(/\s+/g, ' ')
-      .slice(0, 220)
-    throw new Error(`No extracted data returned (status ${status}, content-type "${contentType}"). Response: ${preview}`)
+    const preview = (rawText || JSON.stringify(data) || '').replace(/\s+/g, ' ').slice(0, 220)
+    throw new Error(
+      `No extracted data returned (status ${status}, content-type "${contentType}"). Response: ${preview}`,
+    )
   }
   return data.extracted
 }
 
-async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
+async function extractFlyerInfo(imageBase64, mediaType = 'image/jpeg') {
   const maxAttempts = 4
   let lastErr
   for (let i = 0; i < maxAttempts; i++) {
@@ -129,12 +290,48 @@ async function extractFlyerInfo(imageBase64, mediaType = "image/jpeg") {
     } catch (e) {
       lastErr = e
       const msg = e?.message || ''
-      const retryable = /failed to fetch|networkerror|load failed|network request failed|timeout|abort/i.test(msg)
+      const retryable =
+        /failed to fetch|networkerror|load failed|network request failed|timeout|abort/i.test(msg)
       if (retryable && i < maxAttempts - 1) continue
       throw e
     }
   }
   throw lastErr
+}
+
+function detectClientPlatform() {
+  try {
+    const ua = String(navigator?.userAgent || '')
+    if (/android/i.test(ua)) return 'android'
+    if (/iphone|ipad|ipod/i.test(ua)) return 'ios'
+    return 'web'
+  } catch {
+    return 'unknown'
+  }
+}
+
+async function reportSubmitDiagnostic(payload) {
+  try {
+    const body = {
+      ...payload,
+      event: 'post_event_submit_failed',
+      platform: detectClientPlatform(),
+      online: typeof navigator !== 'undefined' ? navigator.onLine : null,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      url: typeof window !== 'undefined' ? window.location.href : '',
+      appVersion:
+        typeof import.meta !== 'undefined' ? String(import.meta.env?.VITE_APP_VERSION || '') : '',
+    }
+    const endpoint = apiUrl('/api/client-log')
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      keepalive: true,
+      cache: 'no-store',
+      credentials: 'omit',
+    }).catch(() => {})
+  } catch {}
 }
 
 export default function PostEventForm({ onClose, onPosted }) {
@@ -144,7 +341,18 @@ export default function PostEventForm({ onClose, onPosted }) {
   const flyerRef = useRef()
   /** Blocks double-submit before React re-renders disabled={loading}. */
   const submitGuardRef = useRef(false)
-  const [form, setForm] = useState({ title: '', type: 'meet', date: '', time: '', location: '', city: '', address: '', description: '', tags: '', host: '' })
+  const [form, setForm] = useState({
+    title: '',
+    type: 'meet',
+    date: '',
+    time: '',
+    location: '',
+    city: '',
+    address: '',
+    description: '',
+    tags: '',
+    host: '',
+  })
   const [coords, setCoords] = useState(null)
   const [photo, setPhoto] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
@@ -160,7 +368,10 @@ export default function PostEventForm({ onClose, onPosted }) {
   useEffect(() => {
     const urls = Array.from(
       new Set(
-        [apiUrl('/api/storage-health'), 'https://meetmap-gilt.vercel.app/api/storage-health'].filter(Boolean),
+        [
+          apiUrl('/api/storage-health'),
+          'https://meetmap-gilt.vercel.app/api/storage-health',
+        ].filter(Boolean),
       ),
     )
     urls.forEach((u) => {
@@ -168,7 +379,10 @@ export default function PostEventForm({ onClose, onPosted }) {
     })
   }, [])
 
-  const overlayStyle = { ...S.overlay, background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background }
+  const overlayStyle = {
+    ...S.overlay,
+    background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background,
+  }
   const sheetStyle = {
     ...S.sheet,
     background: isLight ? '#FFFFFF' : S.sheet.background,
@@ -204,7 +418,7 @@ export default function PostEventForm({ onClose, onPosted }) {
   const photoBg = isLight ? '#F7F7F7' : '#111'
   const geocodeText = isLight ? '#666' : '#555'
 
-  const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }))
+  const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }))
 
   const handlePhoto = (e) => {
     const file = e.target.files[0]
@@ -227,7 +441,9 @@ export default function PostEventForm({ onClose, onPosted }) {
       // Compress first for better mobile reliability.
       const aiFile = await compressImageForUpload(file, { maxWidth: 1400, quality: 0.8 })
       if (aiFile.size > 8 * 1024 * 1024) {
-        throw new Error('That flyer file is too large for AI extraction on mobile. Try a smaller/cropped image (under ~8MB).')
+        throw new Error(
+          'That flyer file is too large for AI extraction on mobile. Try a smaller/cropped image (under ~8MB).',
+        )
       }
 
       // Convert to base64
@@ -240,14 +456,16 @@ export default function PostEventForm({ onClose, onPosted }) {
       })
       const info = await extractFlyerInfo(base64, mediaType)
       // Fill in the form with extracted info
-      setForm(prev => ({
+      const bestAddress = info.verified_address || info.address || ''
+      const geocodeQuery = buildGeocodeQuery(bestAddress, info.city)
+      setForm((prev) => ({
         ...prev,
         title: info.title || prev.title,
         type: info.type || prev.type,
         date: info.date || prev.date,
         time: info.time || prev.time,
         location: info.location || prev.location,
-        address: info.address || prev.address,
+        address: bestAddress || prev.address,
         city: info.city || prev.city,
         host: info.host || prev.host,
         description: info.description || prev.description,
@@ -255,9 +473,9 @@ export default function PostEventForm({ onClose, onPosted }) {
       }))
       setFlyerSuccess(true)
       // Auto-geocode after import — failures must not look like "flyer failed" (see green success banner).
-      if (info.address) {
+      if (bestAddress) {
         try {
-          const result = await geocodeAddress(info.address)
+          const result = await geocodeAddress(geocodeQuery)
           if (result) {
             setCoords(result)
             setAddressStatus('found')
@@ -278,74 +496,174 @@ export default function PostEventForm({ onClose, onPosted }) {
 
   const handleAddressBlur = async () => {
     if (!form.address.trim()) return
-    setGeocoding(true); setAddressStatus(''); setCoords(null)
+    setGeocoding(true)
+    setAddressStatus('')
+    setCoords(null)
     try {
-      const result = await geocodeAddress(form.address)
-      if (result) { setCoords(result); setAddressStatus('found') }
-      else setAddressStatus('notfound')
+      const result = await geocodeAddress(buildGeocodeQuery(form.address, form.city))
+      if (result) {
+        setCoords(result)
+        setAddressStatus('found')
+      } else setAddressStatus('notfound')
     } catch {
       setAddressStatus('error')
+    } finally {
+      setGeocoding(false)
     }
-    finally { setGeocoding(false) }
   }
 
   const handleSubmit = async () => {
+    if (submitGuardRef.current) return
     const required = [
       { key: 'title', label: 'Event Name' },
       { key: 'date', label: 'Date' },
       { key: 'city', label: 'City, State' },
     ]
-    const missing = required.filter(f => !String(form[f.key] || '').trim())
+    const missing = required.filter((f) => !String(form[f.key] || '').trim())
     if (missing.length > 0) {
-      setMissingFields(missing.map(m => m.key))
-      setError(`Please complete: ${missing.map(m => m.label).join(', ')}.`)
+      setMissingFields(missing.map((m) => m.key))
+      setError(`Please complete: ${missing.map((m) => m.label).join(', ')}.`)
       return
     }
     setMissingFields([])
-    setError(''); setLoading(true)
+    setError('')
+    setLoading(true)
+    submitGuardRef.current = true
+    let created = null
+    let eventPayload = null
+    let didAttemptCreate = false
+    let rollbackRequired = false
+    let stage = ''
     try {
       let finalCoords = coords
       if (form.address && !finalCoords) {
-        finalCoords = await withNetworkRetries(() => geocodeAddress(form.address, { retries: 2 })).catch(() => null)
+        finalCoords = await withNetworkRetries(() =>
+          geocodeAddress(buildGeocodeQuery(form.address, form.city), { retries: 2 }),
+        ).catch(() => null)
       }
-      const tagsArray = form.tags.split(',').map(t => t.trim()).filter(Boolean)
+      const tagsArray = form.tags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
       const safeLocation = String(form.location || '').trim() || String(form.city || '').trim()
-      const eventPayload = {
-        title: form.title, type: form.type, date: form.date, time: form.time,
+      const hasPhotoAtSubmit = !!photo
+      const clientEventId = hasPhotoAtSubmit ? makeClientUuid() : null
+
+      // Upload the photo first so a connection error cannot leave a partially-created event row.
+      let photoUrl = null
+      if (hasPhotoAtSubmit && clientEventId) {
+        stage = 'uploading_photo'
+        photoUrl = await withNetworkRetries(() => uploadEventPhoto(photo, clientEventId), 7)
+        if (!String(photoUrl || '').trim()) {
+          throw new Error('Connection problem while uploading photo. Please try again.')
+        }
+      }
+
+      eventPayload = {
+        id: clientEventId || undefined,
+        title: form.title,
+        type: form.type,
+        date: form.date,
+        time: form.time,
         // DB requires location, so if it's omitted we safely fall back to city.
-        location: safeLocation, city: form.city, address: form.address, description: form.description,
-        tags: tagsArray, host: form.host,
-        lat: finalCoords?.lat || null, lng: finalCoords?.lng || null,
+        location: safeLocation,
+        city: form.city,
+        address: form.address,
+        description: form.description,
+        tags: tagsArray,
+        host: form.host,
+        lat: finalCoords?.lat || null,
+        lng: finalCoords?.lng || null,
+        photo_url: photoUrl || null,
         user_id: user.id,
       }
-      const created = await withNetworkRetries(() => createEvent(eventPayload, user.id), 5)
-      if (photo) {
-        await withNetworkRetries(async () => {
-          const photoUrl = await uploadEventPhoto(photo, created.id)
-          const { supabase } = await import('../lib/supabase')
-          const { error: upErr } = await supabase.from('events').update({ photo_url: photoUrl }).eq('id', created.id)
-          if (upErr) throw upErr
-          created.photo_url = photoUrl
-        }, 5)
+      didAttemptCreate = true
+      stage = 'creating_event'
+      created = await withNetworkRetries(() => createEvent(eventPayload, user.id), 7)
+      if (hasPhotoAtSubmit && !String(created?.photo_url || '').trim()) {
+        rollbackRequired = true
+        throw new Error('Connection problem while saving photo. Please try again.')
       }
-      onPosted(created); onClose()
+      onPosted(created)
+      onClose()
     } catch (e) {
+      console.error('PostEventForm submit failed (stage:', stage, '):', e)
+      const isConn = isTransientNetworkError(e)
       setError(humanizeFetchError(e))
-    }
-    finally {
+      void reportSubmitDiagnostic({
+        stage,
+        message: String(e?.message || ''),
+        code: String(e?.code || ''),
+        details: String(e?.details || e?.hint || ''),
+        hasPhoto: !!photo,
+      })
+
+      // If this submit hit a connection error after the event was created,
+      // delete the event so it doesn't "go through" even though the client failed.
+      if ((isConn || rollbackRequired) && didAttemptCreate) {
+        if (created?.id) {
+          await deleteEventBestEffort(created.id)
+        } else if (eventPayload?.id) {
+          // We generated a client UUID (when photo existed), so deletion by ID is safest.
+          await deleteEventBestEffort(eventPayload.id)
+        } else if (eventPayload?.date) {
+          try {
+            const dateKey = String(eventPayload.date).slice(0, 10)
+            const { data: rows } = await supabase
+              .from('events')
+              .select(
+                'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
+              )
+              .eq('date', dateKey)
+              .eq('user_id', user.id)
+              .limit(80)
+
+            const match = (rows || []).find((r) => eventsLikelyDuplicatePair(r, eventPayload))
+            if (match?.id) await deleteEventBestEffort(match.id)
+          } catch {}
+        }
+      }
+    } finally {
       setLoading(false)
       submitGuardRef.current = false
     }
   }
 
   return (
-    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div style={overlayStyle} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       <div style={sheetStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, letterSpacing: 2, color: '#FF6B35' }}>POST A MEET</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: closeColor, fontSize: 26, cursor: 'pointer' }}>×</button>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 22,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 26,
+              letterSpacing: 2,
+              color: '#FF6B35',
+            }}
+          >
+            POST A MEET
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: closeColor,
+              fontSize: 26,
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
         </div>
 
         {/* FLYER IMPORT BUTTON */}
@@ -353,27 +671,75 @@ export default function PostEventForm({ onClose, onPosted }) {
           onClick={() => flyerRef.current.click()}
           style={{
             border: scanning ? '2px solid #FF6B35' : '2px dashed #FF6B3555',
-            borderRadius: 12, padding: '14px', marginBottom: 18,
+            borderRadius: 12,
+            padding: '14px',
+            marginBottom: 18,
             cursor: scanning ? 'default' : 'pointer',
             background: flyerSuccess
-              ? (isLight ? '#ECFFF2' : '#0A1A0A')
-              : (isLight ? '#FFFFFF' : '#0F0F0F'),
-            display: 'flex', alignItems: 'center', gap: 12,
+              ? isLight
+                ? '#ECFFF2'
+                : '#0A1A0A'
+              : isLight
+                ? '#FFFFFF'
+                : '#0F0F0F',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
             transition: 'all 0.2s',
           }}
         >
           <div style={{ fontSize: 28 }}>{scanning ? '⏳' : flyerSuccess ? '✅' : '📸'}</div>
           <div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1.5, color: flyerSuccess ? '#7CFF6B' : '#FF6B35' }}>
-              {scanning ? 'READING FLYER...' : flyerSuccess ? 'FLYER IMPORTED!' : 'IMPORT FROM FLYER'}
+            <div
+              style={{
+                fontFamily: "'Bebas Neue', sans-serif",
+                fontSize: 16,
+                letterSpacing: 1.5,
+                color: flyerSuccess ? '#7CFF6B' : '#FF6B35',
+              }}
+            >
+              {scanning
+                ? 'READING FLYER...'
+                : flyerSuccess
+                  ? 'FLYER IMPORTED!'
+                  : 'IMPORT FROM FLYER'}
             </div>
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: geocodeText, marginTop: 2 }}>
-              {scanning ? 'AI is extracting event details...' : flyerSuccess ? 'Review the details below and edit if needed' : 'Upload a flyer and AI will fill in the details'}
+            <div
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                color: geocodeText,
+                marginTop: 2,
+              }}
+            >
+              {scanning
+                ? 'AI is extracting event details...'
+                : flyerSuccess
+                  ? 'Review the details below and edit if needed'
+                  : 'Upload a flyer and AI will fill in the details'}
             </div>
           </div>
-          {scanning && <div style={{ marginLeft: 'auto', width: 18, height: 18, border: '2px solid #FF6B35', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />}
+          {scanning && (
+            <div
+              style={{
+                marginLeft: 'auto',
+                width: 18,
+                height: 18,
+                border: '2px solid #FF6B35',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+          )}
         </div>
-        <input ref={flyerRef} type="file" accept="image/*" onChange={handleFlyerUpload} style={{ display: 'none' }} />
+        <input
+          ref={flyerRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFlyerUpload}
+          style={{ display: 'none' }}
+        />
 
         {error && <div style={errorStyle}>{error}</div>}
 
@@ -381,14 +747,46 @@ export default function PostEventForm({ onClose, onPosted }) {
         <label style={labelStyle}>Event Photo</label>
         <div
           onClick={() => fileRef.current.click()}
-          style={{ border: `2px dashed ${photoBorder}`, borderRadius: 10, marginBottom: 14, height: photoPreview ? 180 : 90, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: photoBg }}
+          style={{
+            border: `2px dashed ${photoBorder}`,
+            borderRadius: 10,
+            marginBottom: 14,
+            height: photoPreview ? 180 : 90,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            background: photoBg,
+          }}
         >
-          {photoPreview ? <img src={photoPreview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="preview" /> : <div style={{ textAlign: 'center' }}><div style={{ fontSize: 28, marginBottom: 4 }}>📸</div><div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: geocodeText }}>Tap to add a photo</div></div>}
+          {photoPreview ? (
+            <img
+              src={photoPreview}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              alt="preview"
+            />
+          ) : (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 4 }}>📸</div>
+              <div
+                style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: geocodeText }}
+              >
+                Tap to add a photo
+              </div>
+            </div>
+          )}
         </div>
-        <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} style={{ display: 'none' }} />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          onChange={handlePhoto}
+          style={{ display: 'none' }}
+        />
 
         <label style={labelStyle}>Event Type</label>
-        <select style={selectStyle} value={form.type} onChange={e => set('type', e.target.value)}>
+        <select style={selectStyle} value={form.type} onChange={(e) => set('type', e.target.value)}>
           <option value="meet">Meet</option>
           <option value="car show">Car Show</option>
           <option value="track day">Track Day</option>
@@ -397,83 +795,139 @@ export default function PostEventForm({ onClose, onPosted }) {
 
         <label style={labelStyle}>Event Name *</label>
         <input
-          style={{ ...inputStyle, borderColor: missingFields.includes('title') ? '#FF6060' : inputStyle.border }}
+          style={{
+            ...inputStyle,
+            borderColor: missingFields.includes('title') ? '#FF6060' : inputStyle.border,
+          }}
           placeholder="Sunday Funday Car Meet"
           value={form.title}
-          onChange={e => {
+          onChange={(e) => {
             set('title', e.target.value)
-            if (missingFields.includes('title')) setMissingFields(prev => prev.filter(k => k !== 'title'))
+            if (missingFields.includes('title'))
+              setMissingFields((prev) => prev.filter((k) => k !== 'title'))
           }}
         />
 
         <label style={labelStyle}>Street Address (for map pin)</label>
         <input
-          style={{ ...inputStyle, marginBottom: 4, borderColor: addressStatus === 'found' ? '#FF6B3580' : photoBorder }}
+          style={{
+            ...inputStyle,
+            marginBottom: 4,
+            borderColor: addressStatus === 'found' ? '#FF6B3580' : photoBorder,
+          }}
           placeholder="123 Main St, Riverside, CA 92501"
           value={form.address}
-          onChange={e => { set('address', e.target.value); setAddressStatus(''); setCoords(null) }}
+          onChange={(e) => {
+            set('address', e.target.value)
+            setAddressStatus('')
+            setCoords(null)
+          }}
           onBlur={handleAddressBlur}
         />
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, marginBottom: 12, minHeight: 16 }}>
+        <div
+          style={{
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: 11,
+            marginBottom: 12,
+            minHeight: 16,
+          }}
+        >
           {geocoding && <span style={{ color: geocodeText }}>🔍 Looking up address...</span>}
-          {!geocoding && addressStatus === 'found' && <span style={{ color: '#FF6B35' }}>✓ Address found — pin will appear on map</span>}
-          {!geocoding && addressStatus === 'notfound' && <span style={{ color: '#FF9944' }}>⚠️ Address not found — try adding city and state</span>}
+          {!geocoding && addressStatus === 'found' && (
+            <span style={{ color: '#FF6B35' }}>✓ Address found — pin will appear on map</span>
+          )}
+          {!geocoding && addressStatus === 'notfound' && (
+            <span style={{ color: '#FF9944' }}>
+              ⚠️ Address not found — try adding city and state
+            </span>
+          )}
           {!geocoding && addressStatus === 'error' && (
             <span style={{ color: '#FF9944' }}>
-              ⚠️ Couldn’t verify address on the map (connection issue). Tap the address field and tap away to retry.
+              ⚠️ Couldn’t verify address on the map (connection issue). Tap the address field and
+              tap away to retry.
             </span>
           )}
         </div>
 
         <label style={labelStyle}>Venue / Spot Name (optional)</label>
         <input
-          style={{ ...inputStyle, borderColor: missingFields.includes('location') ? '#FF6060' : inputStyle.border }}
+          style={{
+            ...inputStyle,
+            borderColor: missingFields.includes('location') ? '#FF6060' : inputStyle.border,
+          }}
           placeholder="Walmart East Lot, AutoZone Parking"
           value={form.location}
-          onChange={e => {
+          onChange={(e) => {
             set('location', e.target.value)
-            if (missingFields.includes('location')) setMissingFields(prev => prev.filter(k => k !== 'location'))
+            if (missingFields.includes('location'))
+              setMissingFields((prev) => prev.filter((k) => k !== 'location'))
           }}
         />
 
         <label style={labelStyle}>City, State *</label>
         <input
-          style={{ ...inputStyle, borderColor: missingFields.includes('city') ? '#FF6060' : inputStyle.border }}
+          style={{
+            ...inputStyle,
+            borderColor: missingFields.includes('city') ? '#FF6060' : inputStyle.border,
+          }}
           placeholder="Riverside, CA"
           value={form.city}
-          onChange={e => {
+          onChange={(e) => {
             set('city', e.target.value)
-            if (missingFields.includes('city')) setMissingFields(prev => prev.filter(k => k !== 'city'))
+            if (missingFields.includes('city'))
+              setMissingFields((prev) => prev.filter((k) => k !== 'city'))
           }}
         />
 
         <label style={labelStyle}>Hosted By</label>
-        <input style={inputStyle} placeholder="Your crew / org name" value={form.host} onChange={e => set('host', e.target.value)} />
+        <input
+          style={inputStyle}
+          placeholder="Your crew / org name"
+          value={form.host}
+          onChange={(e) => set('host', e.target.value)}
+        />
 
         <label style={labelStyle}>Tags (comma separated)</label>
-        <input style={inputStyle} placeholder="JDM, Stance, All Welcome" value={form.tags} onChange={e => set('tags', e.target.value)} />
+        <input
+          style={inputStyle}
+          placeholder="JDM, Stance, All Welcome"
+          value={form.tags}
+          onChange={(e) => set('tags', e.target.value)}
+        />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
             <label style={labelStyle}>Date *</label>
             <input
-              style={{ ...inputStyle, borderColor: missingFields.includes('date') ? '#FF6060' : inputStyle.border }}
+              style={{
+                ...inputStyle,
+                borderColor: missingFields.includes('date') ? '#FF6060' : inputStyle.border,
+              }}
               type="date"
               value={form.date}
-              onChange={e => {
+              onChange={(e) => {
                 set('date', e.target.value)
-                if (missingFields.includes('date')) setMissingFields(prev => prev.filter(k => k !== 'date'))
+                if (missingFields.includes('date'))
+                  setMissingFields((prev) => prev.filter((k) => k !== 'date'))
               }}
             />
           </div>
-          <div><label style={labelStyle}>Time</label><input style={inputStyle} type="time" value={form.time} onChange={e => set('time', e.target.value)} /></div>
+          <div>
+            <label style={labelStyle}>Time</label>
+            <input
+              style={inputStyle}
+              type="time"
+              value={form.time}
+              onChange={(e) => set('time', e.target.value)}
+            />
+          </div>
         </div>
 
         <label style={labelStyle}>Details</label>
         <textarea
           placeholder="What's the vibe? Rules, food trucks, special guests..."
           value={form.description}
-          onChange={e => set('description', e.target.value)}
+          onChange={(e) => set('description', e.target.value)}
           rows={3}
           style={{ ...inputStyle, resize: 'none', marginBottom: 20 }}
         />

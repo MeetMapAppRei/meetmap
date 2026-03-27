@@ -61,8 +61,57 @@ on events (
 where coalesce(trim(title), '') <> ''
   and coalesce(trim(city), '') <> '';
 
--- 4) Verification
+-- 4) Verification (partial title+date+city index)
 select indexname, indexdef
 from pg_indexes
 where tablename = 'events'
   and indexname = 'events_title_date_city_unique';
+
+-- 5) If duplicates still appear, the index may be missing in Supabase or rows can share the same
+--    flyer with slightly different `city` strings (bypassing the partial index). Re-run section 4;
+--    if no row is returned, create section 3 again (alone, not in a transaction).
+
+-- 6) Optional stricter rule: one row per normalized title per date (ignores city/venue spelling).
+--    Run the audit below first; delete/remerge duplicates, then run this CREATE alone (CONCURRENTLY).
+create or replace function public.norm_event_text(t text)
+returns text
+language sql
+immutable
+as $$
+  select lower(regexp_replace(trim(coalesce(t, '')), '\\s+', ' ', 'g'));
+$$;
+
+-- create unique index concurrently if not exists events_norm_title_date_unique
+-- on public.events (public.norm_event_text(title), date)
+-- where coalesce(trim(title), '') <> '';
+
+-- 7) Audit: duplicate normalized title + date (for stricter index in section 6)
+with normalized as (
+  select
+    id,
+    created_at,
+    user_id,
+    title,
+    date,
+    city,
+    lower(regexp_replace(trim(coalesce(title, '')), '\\s+', ' ', 'g')) as n_title
+  from events
+)
+select
+  n_title,
+  date,
+  count(*) as duplicate_count,
+  array_agg(id order by created_at asc) as event_ids
+from normalized
+where n_title <> ''
+group by n_title, date
+having count(*) > 1
+order by duplicate_count desc, date desc;
+
+-- 8) All UNIQUE indexes on events (see what is actually deployed)
+select indexname, indexdef
+from pg_indexes
+where schemaname = 'public'
+  and tablename = 'events'
+  and indexdef ilike '%unique%'
+order by indexname;

@@ -25,4 +25,6 @@ const updated = content.replace(/versionCode\s+\d+/, `versionCode ${next}`)
 
 fs.writeFileSync(gradlePath, updated)
 console.log(`Android versionCode: ${previous} → ${next}`)
-console.log('Next: npm run build:mobile && npx cap sync android, then signed AAB in Android Studio.')
+console.log(
+  'Next: npm run build:mobile && npx cap sync android, then signed AAB in Android Studio.',
+)
