@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "prepare": "husky",
+    "prepare": "node -e \"if(process.env.CI){process.exit(0)}; const fs=require('fs'); if(!fs.existsSync('.git')) process.exit(0); const cp=require('child_process'); process.exit(cp.spawnSync('husky',{stdio:'inherit',shell:true}).status||0)\"",
     "preview": "vite preview",
     "build:mobile": "vite build",
     "android:bump-version": "node scripts/bump-android-version.mjs",
