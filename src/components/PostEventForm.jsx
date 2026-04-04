@@ -7,6 +7,23 @@ import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { compressImageForUpload } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
 
+/** Submit failures reuse humanizeFetchError(); make upload/save steps explicit (not “signal”). */
+function messageForPostSubmitError(stage, err) {
+  const base = humanizeFetchError(err)
+  const genericSignal =
+    base === 'Connection problem. Check your signal and try again.' ||
+    base === 'Connection timed out. Please try again.'
+  if (!genericSignal) return base
+  if (stage === 'uploading_photo') {
+    return "Couldn't upload your photo. Check your connection and try again."
+  }
+  if (stage === 'creating_event') {
+    return "Couldn't save your meet. Check your connection and try again."
+  }
+  // Stage not set (error before upload/create) or unknown — still a post failure, not “cell signal”.
+  return "Couldn't post your meet. Check your connection and try again."
+}
+
 function isTransientNetworkError(e) {
   const m = String(
     e?.message ||
@@ -24,6 +41,31 @@ function isTransientNetworkError(e) {
   return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504|econnreset|etimedout|socket|connection refused|eai_again|enotfound|econnrefused|tls|gateway/i.test(
     m,
   )
+}
+
+function normalizeFlyerDates(info) {
+  const raw = info?.dates
+  if (Array.isArray(raw) && raw.length) {
+    const list = [
+      ...new Set(
+        raw.map((d) => String(d ?? '').trim()).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+      ),
+    ].sort()
+    if (list.length) return list
+  }
+  const one = String(info?.date ?? '').trim()
+  return /^\d{4}-\d{2}-\d{2}$/.test(one) ? [one] : []
+}
+
+function formatIsoDateLabel(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return String(iso || '')
+  const dt = new Date(`${iso}T12:00:00`)
+  return dt.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 function buildGeocodeQuery(address, city) {
@@ -218,10 +260,11 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg') {
         statusText ||
         `Request failed (${status})`
 
-      const transient5xx = [502, 503, 504, 520, 521, 522, 524].includes(status)
-      const transientByBody = /bad gateway|temporarily|timeout|upstream|gateway/i.test(
-        String(err || ''),
-      )
+      const transient5xx = [502, 503, 504, 520, 521, 522, 524, 529].includes(status)
+      const transientByBody =
+        /bad gateway|temporarily|timeout|upstream|gateway|overloaded|rate limit|too many requests/i.test(
+          String(err || ''),
+        )
 
       if (transient5xx || transientByBody) {
         lastNetworkError = new Error(err)
@@ -237,7 +280,9 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg') {
       lastNetworkError = e
       const msg = String(e?.message || '')
       const retryableNetwork =
-        /failed to fetch|networkerror|load failed|network request failed|abort|timeout/i.test(msg)
+        /failed to fetch|networkerror|load failed|network request failed|abort|timeout|overloaded|rate limit|too many requests/i.test(
+          msg,
+        )
       if (!retryableNetwork) throw e
     }
   }
@@ -291,7 +336,9 @@ async function extractFlyerInfo(imageBase64, mediaType = 'image/jpeg') {
       lastErr = e
       const msg = e?.message || ''
       const retryable =
-        /failed to fetch|networkerror|load failed|network request failed|timeout|abort/i.test(msg)
+        /failed to fetch|networkerror|load failed|network request failed|timeout|abort|overloaded|rate limit|too many requests/i.test(
+          msg,
+        )
       if (retryable && i < maxAttempts - 1) continue
       throw e
     }
@@ -363,6 +410,8 @@ export default function PostEventForm({ onClose, onPosted }) {
   const [missingFields, setMissingFields] = useState([])
   const [addressStatus, setAddressStatus] = useState('')
   const [flyerSuccess, setFlyerSuccess] = useState(false)
+  /** YYYY-MM-DD list from last flyer scan (shown when 2+ dates). */
+  const [flyerDates, setFlyerDates] = useState([])
 
   // Warm serverless routes (reduces first-request cold-start failures on mobile web).
   useEffect(() => {
@@ -436,6 +485,7 @@ export default function PostEventForm({ onClose, onPosted }) {
     setScanning(true)
     setError('')
     setFlyerSuccess(false)
+    setFlyerDates([])
     try {
       // The backend has a request body limit, and base64 inflates payload size.
       // Compress first for better mobile reliability.
@@ -458,11 +508,14 @@ export default function PostEventForm({ onClose, onPosted }) {
       // Fill in the form with extracted info
       const bestAddress = info.verified_address || info.address || ''
       const geocodeQuery = buildGeocodeQuery(bestAddress, info.city)
+      const allDates = normalizeFlyerDates(info)
+      const primaryDate = allDates[0] || info.date || ''
+      if (allDates.length > 1) setFlyerDates(allDates)
       setForm((prev) => ({
         ...prev,
         title: info.title || prev.title,
         type: info.type || prev.type,
-        date: info.date || prev.date,
+        date: primaryDate || prev.date,
         time: info.time || prev.time,
         location: info.location || prev.location,
         address: bestAddress || prev.address,
@@ -523,6 +576,10 @@ export default function PostEventForm({ onClose, onPosted }) {
     if (missing.length > 0) {
       setMissingFields(missing.map((m) => m.key))
       setError(`Please complete: ${missing.map((m) => m.label).join(', ')}.`)
+      return
+    }
+    if (!user?.id) {
+      setError('Sign in again to post a meet.')
       return
     }
     setMissingFields([])
@@ -589,7 +646,7 @@ export default function PostEventForm({ onClose, onPosted }) {
     } catch (e) {
       console.error('PostEventForm submit failed (stage:', stage, '):', e)
       const isConn = isTransientNetworkError(e)
-      setError(humanizeFetchError(e))
+      setError(messageForPostSubmitError(stage, e))
       void reportSubmitDiagnostic({
         stage,
         message: String(e?.message || ''),
@@ -922,6 +979,58 @@ export default function PostEventForm({ onClose, onPosted }) {
             />
           </div>
         </div>
+
+        {flyerDates.length > 1 && (
+          <div style={{ marginTop: -6, marginBottom: 14 }}>
+            <div style={{ ...labelStyle, marginBottom: 8 }}>Dates on flyer</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {flyerDates.map((d) => {
+                const active = form.date === d
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => {
+                      set('date', d)
+                      if (missingFields.includes('date'))
+                        setMissingFields((prev) => prev.filter((k) => k !== 'date'))
+                    }}
+                    style={{
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: 13,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${active ? '#FF6B35' : isLight ? '#E5E5E5' : '#333'}`,
+                      background: active
+                        ? isLight
+                          ? '#FFF4EF'
+                          : '#2A1810'
+                        : isLight
+                          ? '#FFFFFF'
+                          : '#141414',
+                      color: isLight ? '#111' : '#F0F0F0',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {formatIsoDateLabel(d)}
+                  </button>
+                )
+              })}
+            </div>
+            <div
+              style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                color: geocodeText,
+                marginTop: 8,
+                lineHeight: 1.4,
+              }}
+            >
+              Tap a date to use it for the map listing (one date per post). Other dates are only on
+              the flyer—add them as separate posts if needed.
+            </div>
+          </div>
+        )}
 
         <label style={labelStyle}>Details</label>
         <textarea

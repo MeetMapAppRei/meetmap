@@ -87,11 +87,35 @@ const titleFromCitySlug = (slug) => {
     .toLowerCase()
   if (!clean) return ''
   if (CITY_SLUG_OVERRIDES[clean]) return CITY_SLUG_OVERRIDES[clean]
-  return clean
-    .split('-')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ')
+  const parts = clean.split('-').filter(Boolean)
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1]
+    if (/^[a-z]{2}$/i.test(last)) {
+      const state = last.toUpperCase()
+      const city = parts
+        .slice(0, -1)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ')
+      if (city) return `${city}, ${state}`
+    }
+  }
+  return parts.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+const applySeoForNearMePage = () => {
+  if (typeof document === 'undefined') return
+  document.title = 'Find Car Meets Near Me — Meet Map'
+  const desc =
+    'Find car meets, car shows, cruises, and track days near you. Browse upcoming events and post your own.'
+
+  const descTag = document.querySelector('meta[name="description"]')
+  if (descTag) descTag.setAttribute('content', desc)
+
+  const canonicalHref = `${window.location.origin}${window.location.pathname}`
+  const canonical = document.querySelector('link[rel="canonical"]')
+  if (canonical) canonical.setAttribute('href', canonicalHref)
+  const ogUrl = document.querySelector('meta[property="og:url"]')
+  if (ogUrl) ogUrl.setAttribute('content', canonicalHref)
 }
 
 const applySeoForCityPage = (cityLabel) => {
@@ -106,10 +130,11 @@ const applySeoForCityPage = (cityLabel) => {
   const descTag = document.querySelector('meta[name="description"]')
   if (descTag) descTag.setAttribute('content', desc)
 
+  const canonicalHref = `${window.location.origin}${window.location.pathname}`
   const canonical = document.querySelector('link[rel="canonical"]')
-  if (canonical) canonical.setAttribute('href', window.location.href)
+  if (canonical) canonical.setAttribute('href', canonicalHref)
   const ogUrl = document.querySelector('meta[property="og:url"]')
-  if (ogUrl) ogUrl.setAttribute('content', window.location.href)
+  if (ogUrl) ogUrl.setAttribute('content', canonicalHref)
 }
 
 const eventStartMs = (event) => {
@@ -118,6 +143,28 @@ const eventStartMs = (event) => {
   const dt = new Date(`${event.date}T${timePart}`)
   const ms = dt.getTime()
   return Number.isFinite(ms) ? ms : null
+}
+
+const toDateKeyLocal = (d) => {
+  if (!(d instanceof Date) || !Number.isFinite(d.getTime())) return ''
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+const weekRangeKeysLocal = (now = new Date()) => {
+  const base = new Date(now)
+  if (!Number.isFinite(base.getTime())) return { startKey: '', endKey: '' }
+  base.setHours(12, 0, 0, 0)
+  // Week is Monday..Sunday in local time.
+  const day = base.getDay() // 0=Sun,1=Mon,...6=Sat
+  const mondayOffset = day === 0 ? -6 : 1 - day
+  const start = new Date(base)
+  start.setDate(base.getDate() + mondayOffset)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return { startKey: toDateKeyLocal(start), endKey: toDateKeyLocal(end) }
 }
 
 function AppInner() {
@@ -136,6 +183,10 @@ function AppInner() {
   // Support SEO-friendly city landing pages: /car-meets-in-<slug>/
   useEffect(() => {
     const path = String(window.location.pathname || '')
+    if (/^\/find-car-meets-near-me\/?$/i.test(path)) {
+      applySeoForNearMePage()
+      return
+    }
     const match = path.match(/^\/car-meets-in-([^/]+)\/?$/i)
     if (!match) {
       applySeoForCityPage('')
@@ -180,6 +231,7 @@ function AppInner() {
   const [nearMeOnly, setNearMeOnly] = useState(false)
   const [nearMeCoords, setNearMeCoords] = useState(null)
   const [nearMeError, setNearMeError] = useState('')
+  const [thisWeekOnly, setThisWeekOnly] = useState(false)
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
 
   // Prevent triggering Supabase queries on every keystroke.
@@ -187,6 +239,15 @@ function AppInner() {
     const t = setTimeout(() => setDebouncedSearchQuery(searchQuery), 400)
     return () => clearTimeout(t)
   }, [searchQuery])
+
+  // Allow shareable search URLs like /?q=Los%20Angeles,%20CA
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const q = String(params.get('q') || '').trim()
+      if (q) setSearchQuery(q)
+    } catch {}
+  }, [])
 
   const loadEvents = useCallback(async () => {
     setLoading(true)
@@ -422,6 +483,8 @@ function AppInner() {
 
   const filteredDedupedEvents = dedupeEventsByLikelyDuplicate(pastFilteredEvents)
 
+  const { startKey: thisWeekStartKey, endKey: thisWeekEndKey } = weekRangeKeysLocal()
+
   const eventsForDisplay =
     nearMeOnly && nearMeCoords
       ? filteredDedupedEvents
@@ -443,12 +506,26 @@ function AppInner() {
           })
       : filteredDedupedEvents
 
+  const eventsFilteredForWeek = thisWeekOnly
+    ? [...eventsForDisplay]
+        .filter((e) => {
+          const k = String(e?.date || '')
+          if (!k || !thisWeekStartKey || !thisWeekEndKey) return false
+          return k >= thisWeekStartKey && k <= thisWeekEndKey
+        })
+        .sort((a, b) => {
+          const aStart = eventStartMs(a) ?? Number.POSITIVE_INFINITY
+          const bStart = eventStartMs(b) ?? Number.POSITIVE_INFINITY
+          return aStart - bStart
+        })
+    : eventsForDisplay
+
   const eventsForCurrentView =
     view === 'mine' && user
-      ? [...eventsForDisplay]
+      ? [...eventsFilteredForWeek]
           .filter((e) => e?.user_id === user.id)
           .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
-      : eventsForDisplay
+      : eventsFilteredForWeek
 
   const upcomingCount = eventsForCurrentView.filter(
     (e) => e.date >= new Date().toISOString().split('T')[0],
@@ -943,7 +1020,7 @@ function AppInner() {
     }
   }
 
-  const handleUpdateImport = async (importId, nextDraft) => {
+  const handleUpdateImport = async (importId, nextDraft, previousExtracted) => {
     if (!canAccessImports || !user || !importId || !nextDraft) return
     const tags = (nextDraft.tagsText || '')
       .split(',')
@@ -964,6 +1041,7 @@ function AppInner() {
       description: nextDraft.description?.trim() || null,
       tags,
       extracted: {
+        ...(previousExtracted && typeof previousExtracted === 'object' ? previousExtracted : {}),
         title: nextDraft.title || '',
         type: nextDraft.type || '',
         date: nextDraft.date || '',
@@ -1287,6 +1365,33 @@ function AppInner() {
             }}
           >
             {nearMeOnly ? `✓ Near Me` : `Near Me`}
+          </button>
+
+          {/* This Week */}
+          <button
+            onClick={() => setThisWeekOnly((v) => !v)}
+            style={{
+              background: thisWeekOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
+              color: thisWeekOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
+              border: '1px solid',
+              borderColor: thisWeekOnly ? '#FF6B35' : filterChipBorder,
+              borderRadius: 20,
+              padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              whiteSpace: 'nowrap',
+            }}
+            title={
+              thisWeekOnly && thisWeekStartKey && thisWeekEndKey
+                ? `Showing events ${thisWeekStartKey} to ${thisWeekEndKey}`
+                : 'Show only events happening this week'
+            }
+          >
+            {thisWeekOnly ? `✓ This Week` : `This Week`}
           </button>
 
           {/* Other type filters */}

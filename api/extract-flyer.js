@@ -11,6 +11,7 @@ const PROMPT = `Extract car meet event info from this flyer. Return ONLY a JSON 
   "title": "event name",
   "type": "meet|car show|track day|cruise",
   "date": "YYYY-MM-DD",
+  "dates": ["YYYY-MM-DD"],
   "time": "HH:MM",
   "location": "venue/spot name",
   "address": "full street address if visible (one line)",
@@ -20,13 +21,37 @@ const PROMPT = `Extract car meet event info from this flyer. Return ONLY a JSON 
   "description": "any details about the event",
   "tags": "comma separated tags like JDM, All Makes, etc"
 }
-If a field is not found, use empty string. For date, convert to YYYY-MM-DD format using the current year ${new Date().getFullYear()} if no year is specified on the flyer. For time use 24hr format.`
+If a field is not found, use empty string for strings or [] for dates. For dates: list EVERY distinct event date shown on the flyer (multi-day meets, recurring dates, date ranges, or multiple listed days) in "dates" as ISO strings sorted earliest-first. If there is only one date, use a single-element array. Set "date" to the same value as the first/primary date (usually the earliest). For date, convert to YYYY-MM-DD using the current year ${new Date().getFullYear()} if no year is specified on the flyer. For time use 24hr format.`
 
 const norm = (value) =>
   String(value ?? '')
     .replace(/\u2013|\u2014/g, '-') // en/em dash
     .replace(/\s+/g, ' ')
     .trim()
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** Normalize model output: dedupe, sort, keep date in sync with dates[0]. */
+function normalizeExtractedDates(extracted) {
+  if (!extracted || typeof extracted !== 'object') return extracted
+  const raw = extracted.dates
+  let list = []
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const s = String(item ?? '').trim()
+      if (ISO_DATE_RE.test(s) && !list.includes(s)) list.push(s)
+    }
+  }
+  const single = String(extracted.date ?? '').trim()
+  if (list.length === 0 && ISO_DATE_RE.test(single)) list = [single]
+  list.sort()
+  const primary = list[0] || (ISO_DATE_RE.test(single) ? single : '')
+  return {
+    ...extracted,
+    dates: list,
+    date: primary || extracted.date || '',
+  }
+}
 
 const looksLikeUsZip = (s) => /\b\d{5}(?:-\d{4})?\b/.test(String(s || ''))
 
@@ -213,12 +238,21 @@ export default async function handler(req, res) {
           data?.message ||
           (typeof data?.error === 'string' ? data.error : null) ||
           JSON.stringify(data)
-        return res.status(response.status).json({ error: err, status: response.status })
+        const status = Number(response.status) || 500
+        const overloaded =
+          status === 529 || /overloaded|rate limit|too many requests/i.test(String(err || ''))
+        if (overloaded) {
+          res.setHeader('Retry-After', '3')
+          return res
+            .status(503)
+            .json({ error: 'Overloaded. Please try again in a moment.', status })
+        }
+        return res.status(status).json({ error: err, status })
       }
 
       const text = data.content?.[0]?.text || ''
       const clean = text.replace(/```json|```/g, '').trim()
-      const extracted = JSON.parse(clean)
+      const extracted = normalizeExtractedDates(JSON.parse(clean))
       const verified = await verifyAndNormalizeAddress(extracted)
       return res.status(200).json({ extracted: { ...extracted, ...verified } })
     }
@@ -412,7 +446,7 @@ export default async function handler(req, res) {
 
     const text = data.content?.[0]?.text || ''
     const clean = text.replace(/```json|```/g, '').trim()
-    const extracted = JSON.parse(clean)
+    const extracted = normalizeExtractedDates(JSON.parse(clean))
     const verified = await verifyAndNormalizeAddress(extracted)
 
     res.status(200).json({ extracted: { ...extracted, ...verified } })

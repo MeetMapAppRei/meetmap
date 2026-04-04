@@ -8,6 +8,31 @@ const TYPE_LABELS = {
   cruise: 'Cruise',
 }
 
+function formatIsoDateShort(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return String(iso || '')
+  const dt = new Date(`${iso}T12:00:00`)
+  return dt.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+/** Summary line for import card: multiple flyer dates vs single. */
+function importDateSummary(i) {
+  const ex = i?.extracted
+  if (ex && Array.isArray(ex.dates) && ex.dates.length > 1) {
+    const sorted = [
+      ...new Set(
+        ex.dates.map((x) => String(x ?? '').trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)),
+      ),
+    ].sort()
+    if (sorted.length > 1) return sorted.map(formatIsoDateShort).join(' · ')
+  }
+  return i.date || 'Missing date'
+}
+
 function requiredOk(i) {
   const requiredKeys = ['title', 'type', 'date', 'location', 'city']
   return requiredKeys.every((k) => (typeof i?.[k] === 'string' ? i[k].trim().length > 0 : !!i?.[k]))
@@ -249,7 +274,7 @@ export default function ImportQueueModal({
                             }}
                           >
                             {TYPE_LABELS[i.type] || i.type || 'Missing type'} ·{' '}
-                            {i.date || 'Missing date'}
+                            {importDateSummary(i)}
                           </div>
                           <div
                             style={{
@@ -532,6 +557,60 @@ export default function ImportQueueModal({
                                   outline: 'none',
                                 }}
                               />
+                              {(() => {
+                                const ex = i.extracted
+                                const multi =
+                                  ex &&
+                                  Array.isArray(ex.dates) &&
+                                  ex.dates.filter((x) =>
+                                    /^\d{4}-\d{2}-\d{2}$/.test(String(x).trim()),
+                                  ).length > 1
+                                if (!multi) return null
+                                const sorted = [
+                                  ...new Set(
+                                    ex.dates
+                                      .map((x) => String(x ?? '').trim())
+                                      .filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)),
+                                  ),
+                                ].sort()
+                                return (
+                                  <div
+                                    style={{
+                                      marginTop: 8,
+                                      fontFamily: "'DM Sans', sans-serif",
+                                      fontSize: 11,
+                                      color: textMuted,
+                                      lineHeight: 1.45,
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                                      Dates on flyer
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                      {sorted.map((d) => (
+                                        <button
+                                          key={d}
+                                          type="button"
+                                          onClick={() => setDraft((p) => ({ ...p, date: d }))}
+                                          style={{
+                                            fontFamily: "'DM Sans', sans-serif",
+                                            fontSize: 12,
+                                            padding: '5px 9px',
+                                            borderRadius: 6,
+                                            border: `1px solid ${draft.date === d ? '#FF6B35' : btnBorder}`,
+                                            background:
+                                              draft.date === d ? 'rgba(255,107,53,0.12)' : btnBg,
+                                            color: inputText,
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          {formatIsoDateShort(d)}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
                             </div>
                             <div>
                               <div
@@ -797,7 +876,7 @@ export default function ImportQueueModal({
                             </button>
                             <button
                               onClick={async () => {
-                                await onUpdateImport?.(i.id, draft)
+                                await onUpdateImport?.(i.id, draft, i.extracted)
                                 setEditingId(null)
                                 setDraft(null)
                               }}
