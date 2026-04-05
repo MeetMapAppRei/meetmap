@@ -8,6 +8,7 @@ import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import { compressImageForUpload } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
 import { makeClientUuid } from '../lib/clientUuid'
+import { savePostPrefill, loadAndConsumePostPrefill, clearPostPrefill } from '../lib/postPrefill'
 
 function isTransientNetworkError(e) {
   const m = String(
@@ -374,6 +375,19 @@ export default function PostEventForm({ onClose, onPosted }) {
   const [flyerSuccess, setFlyerSuccess] = useState(false)
   /** YYYY-MM-DD list from last flyer scan (shown when 2+ dates). */
   const [flyerDates, setFlyerDates] = useState([])
+  const [prefillBanner, setPrefillBanner] = useState(false)
+
+  useEffect(() => {
+    const snap = loadAndConsumePostPrefill()
+    if (!snap?.form) return
+    setForm((prev) => ({ ...prev, ...snap.form }))
+    if (snap.flyerDates?.length) setFlyerDates(snap.flyerDates)
+    if (snap.coords?.lat != null && snap.coords?.lng != null) {
+      setCoords(snap.coords)
+      setAddressStatus('found')
+    }
+    setPrefillBanner(true)
+  }, [])
 
   // Warm serverless routes (reduces first-request cold-start failures on mobile web).
   useEffect(() => {
@@ -448,6 +462,7 @@ export default function PostEventForm({ onClose, onPosted }) {
     setError('')
     setFlyerSuccess(false)
     setFlyerDates([])
+    clearPostPrefill()
     try {
       // The backend has a request body limit, and base64 inflates payload size.
       // Compress first for better mobile reliability.
@@ -608,6 +623,7 @@ export default function PostEventForm({ onClose, onPosted }) {
         rollbackRequired = true
         throw new Error('Connection problem while saving photo. Please try again.')
       }
+      savePostPrefill({ form, flyerDates, coords: finalCoords })
       onPosted(created)
       onClose()
     } catch (e) {
@@ -690,6 +706,46 @@ export default function PostEventForm({ onClose, onPosted }) {
             ×
           </button>
         </div>
+
+        {prefillBanner && (
+          <div
+            style={{
+              background: isLight ? '#E8F5E9' : '#0F1F12',
+              border: `1px solid ${isLight ? '#B8D4B8' : '#2A3F2C'}`,
+              borderRadius: 8,
+              padding: '10px 12px',
+              marginBottom: 14,
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 13,
+              color: isLight ? '#1B5E20' : '#7CFF6B',
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}
+          >
+            <span>
+              Restored from your last post (next flyer date when applicable). Add a photo again if
+              you want one on the listing.
+            </span>
+            <button
+              type="button"
+              onClick={() => setPrefillBanner(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: isLight ? '#2E7D32' : '#7CFF6B',
+                fontSize: 18,
+                lineHeight: 1,
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* FLYER IMPORT BUTTON */}
         <div
