@@ -1,5 +1,6 @@
 /**
- * One-shot restore after a successful post so multi-date flyers can be listed quickly.
+ * One-shot restore after a successful post **only for multi-date flyers** (2+ dates) so the next
+ * date can be listed quickly. Single-date posts do not persist (avoids restoring unrelated events).
  * Persists in localStorage (survives tab close) with a TTL; falls back to sessionStorage if needed.
  * Photo is not persisted (File cannot be serialized); user re-uploads flyer if needed.
  */
@@ -50,8 +51,14 @@ export function pickNextFlyerDate(current, list) {
  * @param {{ form: Record<string, string>, flyerDates: string[], coords: { lat: number, lng: number } | null }} snap
  */
 export function savePostPrefill({ form, flyerDates, coords }) {
-  const nextDate =
-    flyerDates.length > 1 ? pickNextFlyerDate(form.date, flyerDates) : form.date || ''
+  const dates = Array.isArray(flyerDates) ? flyerDates : []
+  if (dates.length < 2) {
+    // Drop legacy snapshots from older clients that saved every post, and skip single-date posts.
+    clearPostPrefill()
+    return
+  }
+
+  const nextDate = pickNextFlyerDate(form.date, dates)
   const payload = {
     v: 2,
     savedAt: Date.now(),
@@ -67,7 +74,7 @@ export function savePostPrefill({ form, flyerDates, coords }) {
       tags: form.tags || '',
       host: form.host || '',
     },
-    flyerDates: Array.isArray(flyerDates) ? [...flyerDates] : [],
+    flyerDates: [...dates],
     coords:
       coords && coords.lat != null && coords.lng != null
         ? { lat: Number(coords.lat), lng: Number(coords.lng) }
@@ -91,6 +98,11 @@ export function loadAndConsumePostPrefill() {
       storageRemove(STORAGE_KEY)
       return null
     }
+    const loadedDates = Array.isArray(data.flyerDates) ? data.flyerDates : []
+    if (loadedDates.length < 2) {
+      storageRemove(STORAGE_KEY)
+      return null
+    }
     if (data.v === 2 && typeof data.savedAt === 'number') {
       if (Date.now() - data.savedAt > MAX_AGE_MS) {
         storageRemove(STORAGE_KEY)
@@ -100,7 +112,7 @@ export function loadAndConsumePostPrefill() {
     storageRemove(STORAGE_KEY)
     return {
       form: data.form,
-      flyerDates: data.flyerDates || [],
+      flyerDates: loadedDates,
       coords: data.coords || null,
     }
   } catch {
