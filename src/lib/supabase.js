@@ -11,6 +11,9 @@ const SUPABASE_ANON_KEY =
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
+/** Target max image size before R2 upload (relay JSON inflates ~4/3× over raw bytes). */
+export const R2_RELAY_IMAGE_MAX_BYTES = 2_400_000
+
 // ═══ AUTH ═══════════════════════════════════════════════════
 
 export const signUp = (email, password, username) =>
@@ -434,11 +437,6 @@ function isR2StorageEnabled() {
   return s === 'true' || s === '1' || s === 'yes'
 }
 
-function isMobileBrowser() {
-  if (typeof navigator === 'undefined') return false
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-}
-
 async function fileToBase64Payload(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -463,35 +461,52 @@ function errorWithStatus(message, status) {
 }
 
 /** Server relay (JSON + base64) — avoids mobile browser PUT/CORS issues to R2. */
-async function relayUploadToR2(file, key, token, correlationId) {
+async function relayUploadToR2(file, key, token, correlationId, contentTypeHint) {
   const base64Data = await fileToBase64Payload(file)
+  const ct =
+    (typeof contentTypeHint === 'string' && contentTypeHint.startsWith('image/')
+      ? contentTypeHint
+      : null) ||
+    (file.type && file.type.startsWith('image/') ? file.type : null) ||
+    'image/jpeg'
   const relayPayload = JSON.stringify({
     key,
-    contentType: file.type || 'application/octet-stream',
+    contentType: ct,
     base64Data,
   })
   const relayUrls = apiUrlCandidates('/api/storage-upload')
   let lastRelayErr = new Error('Upload relay failed')
+
+  const shouldRetryRelay = (status) =>
+    status == null || status === 429 || status === 502 || status === 503 || status === 504
+
   for (const relayUrl of relayUrls) {
-    try {
-      const relay = await fetch(relayUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          ...(correlationId ? { 'X-Correlation-Id': String(correlationId) } : {}),
-        },
-        body: relayPayload,
-        cache: 'no-store',
-      })
-      const relayJson = await relay.json().catch(() => ({}))
-      if (relay.ok) return
-      lastRelayErr = errorWithStatus(
-        relayJson.error || `Upload relay failed (${relay.status})`,
-        relay.status,
-      )
-    } catch (e) {
-      lastRelayErr = e instanceof Error ? e : new Error(String(e))
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        const jitter = Math.floor(Math.random() * 180)
+        await new Promise((r) => setTimeout(r, 320 * attempt + jitter))
+      }
+      try {
+        const relay = await fetch(relayUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            ...(correlationId ? { 'X-Correlation-Id': String(correlationId) } : {}),
+          },
+          body: relayPayload,
+          cache: 'no-store',
+        })
+        const relayJson = await relay.json().catch(() => ({}))
+        if (relay.ok) return
+        lastRelayErr = errorWithStatus(
+          relayJson.error || `Upload relay failed (${relay.status})`,
+          relay.status,
+        )
+        if (!shouldRetryRelay(relay.status)) break
+      } catch (e) {
+        lastRelayErr = e instanceof Error ? e : new Error(String(e))
+      }
     }
   }
   throw lastRelayErr
@@ -537,14 +552,20 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
   const { uploadUrl, publicUrl, key } = json
   if (!uploadUrl || !publicUrl || !key) throw new Error('Invalid presign response')
 
-  // Mobile Safari / Chrome often block or flake on cross-origin PUT to R2; try relay first.
-  if (isMobileBrowser()) {
-    try {
-      await relayUploadToR2(file, key, token, correlationId)
-      return publicUrl
-    } catch (e) {
-      console.warn('meetmap: relay-first upload failed, trying direct PUT', e)
-    }
+  const relayContentType =
+    typeof body.contentType === 'string' && body.contentType.startsWith('image/')
+      ? body.contentType
+      : file.type && file.type.startsWith('image/')
+        ? file.type
+        : 'image/jpeg'
+
+  // Prefer relay on all platforms: avoids flaky cross-origin PUT to R2 (esp. mobile) and
+  // ensures Content-Type matches what we presigned (some File objects omit .type after compression).
+  try {
+    await relayUploadToR2(file, key, token, correlationId, relayContentType)
+    return publicUrl
+  } catch (e) {
+    console.warn('meetmap: relay upload failed, trying direct PUT', e)
   }
 
   try {
@@ -552,7 +573,7 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
       method: 'PUT',
       body: file,
       headers: {
-        'Content-Type': file.type || 'application/octet-stream',
+        'Content-Type': relayContentType,
       },
       cache: 'no-store',
     })
@@ -561,9 +582,9 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
       throw errorWithStatus(`Upload failed (${put.status}) ${t.slice(0, 120)}`, put.status)
     }
   } catch (err) {
-    // Mobile WebView CORS quirks: fallback to server-side upload via API (try multiple hosts).
+    // Fallback: server-side upload via API (try multiple hosts).
     try {
-      await relayUploadToR2(file, key, token, correlationId)
+      await relayUploadToR2(file, key, token, correlationId, relayContentType)
       return publicUrl
     } catch (relayErr) {
       const primary = err instanceof Error ? err : new Error(String(err))
@@ -579,7 +600,7 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
 export const uploadEventPhoto = async (file, eventId, uploadOptions = {}) => {
   // Event photos are shown frequently in list/detail views; reduce upload size for mobile reliability.
   // Cap binary size so base64 relay JSON stays under serverless body limits (~4/3 expansion).
-  const ready = await compressImageForUploadUnder(file, 3_200_000, {
+  const ready = await compressImageForUploadUnder(file, R2_RELAY_IMAGE_MAX_BYTES, {
     maxWidth: 1000,
     quality: 0.72,
   })
@@ -613,7 +634,7 @@ export const uploadEventPhoto = async (file, eventId, uploadOptions = {}) => {
 export const uploadFlyerImportImage = async (file, userId, uploadOptions = {}) => {
   if (!file) throw new Error('Missing file')
   if (!userId) throw new Error('Missing userId')
-  const ready = await compressImageForUploadUnder(file, 3_200_000, {
+  const ready = await compressImageForUploadUnder(file, R2_RELAY_IMAGE_MAX_BYTES, {
     maxWidth: 1280,
     quality: 0.78,
   })

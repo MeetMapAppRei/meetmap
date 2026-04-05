@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { createEvent, uploadEventPhoto, supabase } from '../lib/supabase'
+import { createEvent, uploadEventPhoto, supabase, R2_RELAY_IMAGE_MAX_BYTES } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { apiUrl } from '../lib/apiOrigin'
@@ -485,7 +485,7 @@ export default function PostEventForm({ onClose, onPosted }) {
       flyerCorrelationId = makeClientUuid()
       // Same size budget as uploadEventPhoto → R2 relay: smaller base64 JSON, fewer mobile failures.
       // Also normalizes HEIC/large originals to JPEG before we set `photo` for submit.
-      const ready = await compressImageForUploadUnder(file, 3_200_000, {
+      const ready = await compressImageForUploadUnder(file, R2_RELAY_IMAGE_MAX_BYTES, {
         maxWidth: 1400,
         quality: 0.72,
       })
