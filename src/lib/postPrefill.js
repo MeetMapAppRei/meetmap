@@ -1,8 +1,41 @@
 /**
- * One-shot session restore after a successful post so multi-date flyers can be listed quickly.
+ * One-shot restore after a successful post so multi-date flyers can be listed quickly.
+ * Persists in localStorage (survives tab close) with a TTL; falls back to sessionStorage if needed.
  * Photo is not persisted (File cannot be serialized); user re-uploads flyer if needed.
  */
 const STORAGE_KEY = 'meetmap_post_prefill_v1'
+/** Drop stale snapshots so old meets don't reappear weeks later. */
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
+function storageGet(key) {
+  try {
+    return localStorage.getItem(key) || sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function storageSet(key, val) {
+  try {
+    localStorage.setItem(key, val)
+    return
+  } catch {
+    try {
+      sessionStorage.setItem(key, val)
+    } catch {
+      // quota / private mode
+    }
+  }
+}
+
+function storageRemove(key) {
+  try {
+    localStorage.removeItem(key)
+  } catch {}
+  try {
+    sessionStorage.removeItem(key)
+  } catch {}
+}
 
 /** Next date in sorted flyer list after `current` (wraps). */
 export function pickNextFlyerDate(current, list) {
@@ -20,7 +53,8 @@ export function savePostPrefill({ form, flyerDates, coords }) {
   const nextDate =
     flyerDates.length > 1 ? pickNextFlyerDate(form.date, flyerDates) : form.date || ''
   const payload = {
-    v: 1,
+    v: 2,
+    savedAt: Date.now(),
     form: {
       title: form.title || '',
       type: form.type || 'meet',
@@ -39,28 +73,41 @@ export function savePostPrefill({ form, flyerDates, coords }) {
         ? { lat: Number(coords.lat), lng: Number(coords.lng) }
         : null,
   }
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  } catch {
-    // quota / private mode
-  }
+  storageSet(STORAGE_KEY, JSON.stringify(payload))
 }
 
 export function loadAndConsumePostPrefill() {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = storageGet(STORAGE_KEY)
     if (!raw) return null
-    sessionStorage.removeItem(STORAGE_KEY)
-    const data = JSON.parse(raw)
-    if (!data || data.v !== 1 || !data.form) return null
-    return data
+    let data
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      storageRemove(STORAGE_KEY)
+      return null
+    }
+    if (!data?.form) {
+      storageRemove(STORAGE_KEY)
+      return null
+    }
+    if (data.v === 2 && typeof data.savedAt === 'number') {
+      if (Date.now() - data.savedAt > MAX_AGE_MS) {
+        storageRemove(STORAGE_KEY)
+        return null
+      }
+    }
+    storageRemove(STORAGE_KEY)
+    return {
+      form: data.form,
+      flyerDates: data.flyerDates || [],
+      coords: data.coords || null,
+    }
   } catch {
     return null
   }
 }
 
 export function clearPostPrefill() {
-  try {
-    sessionStorage.removeItem(STORAGE_KEY)
-  } catch {}
+  storageRemove(STORAGE_KEY)
 }

@@ -725,8 +725,8 @@ export default function PostEventForm({ onClose, onPosted }) {
             }}
           >
             <span>
-              Restored from your last post (next flyer date when applicable). Add a photo again if
-              you want one on the listing.
+              Restored from your last post (kept for a few days if you close the tab). Next flyer
+              date is selected when applicable. Add a photo again if you want one on the listing.
             </span>
             <button
               type="button"
