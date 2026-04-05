@@ -326,11 +326,11 @@ function detectClientPlatform() {
   }
 }
 
-async function reportSubmitDiagnostic(payload) {
+async function reportClientLogEvent(event, payload) {
   try {
     const body = {
       ...payload,
-      event: 'post_event_submit_failed',
+      event,
       platform: detectClientPlatform(),
       online: typeof navigator !== 'undefined' ? navigator.onLine : null,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -348,6 +348,20 @@ async function reportSubmitDiagnostic(payload) {
       credentials: 'omit',
     }).catch(() => {})
   } catch {}
+}
+
+async function reportSubmitDiagnostic(payload) {
+  return reportClientLogEvent('post_event_submit_failed', payload)
+}
+
+async function reportFlyerScanDiagnostic(payload) {
+  return reportClientLogEvent('flyer_scan_failed', payload)
+}
+
+function refSuffixForLog(correlationId) {
+  if (!correlationId) return ''
+  const short = String(correlationId).replace(/-/g, '').slice(0, 8)
+  return short ? ` Ref: ${short}` : ''
 }
 
 export default function PostEventForm({ onClose, onPosted }) {
@@ -469,8 +483,9 @@ export default function PostEventForm({ onClose, onPosted }) {
     setFlyerSuccess(false)
     setFlyerDates([])
     clearPostPrefill()
+    let flyerCorrelationId = ''
     try {
-      const flyerCorrelationId = makeClientUuid()
+      flyerCorrelationId = makeClientUuid()
       // The backend has a request body limit, and base64 inflates payload size.
       // Compress first for better mobile reliability.
       const aiFile = await compressImageForUpload(file, { maxWidth: 1400, quality: 0.8 })
@@ -525,7 +540,15 @@ export default function PostEventForm({ onClose, onPosted }) {
       }
     } catch (e) {
       const msg = humanizeFetchError(e) || (typeof e === 'string' ? e : String(e))
-      setError(msg || 'Could not read flyer. Try a clearer image or fill in manually.')
+      const base = msg || 'Could not read flyer. Try a clearer image or fill in manually.'
+      setError(base + refSuffixForLog(flyerCorrelationId))
+      void reportFlyerScanDiagnostic({
+        correlationId: flyerCorrelationId,
+        message: String(e?.message || ''),
+        code: String(e?.code || ''),
+        details: String(e?.details || e?.hint || ''),
+        stage: 'flyer_extract',
+      })
     } finally {
       setScanning(false)
     }
