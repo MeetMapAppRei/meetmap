@@ -186,13 +186,18 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
+  let correlationId = ''
   try {
-    const { imageUrl, sourceUrl, imageBase64, mediaType: mediaTypeInput } = req.body || {}
+    const reqBody = req.body && typeof req.body === 'object' ? req.body : {}
+    const { imageUrl, sourceUrl, imageBase64, mediaType: mediaTypeInput } = reqBody
+    correlationId = String(reqBody.correlationId || '').slice(0, 80)
+    const withCid = (obj) => (correlationId ? { ...obj, correlationId } : obj)
+
     if (!imageUrl && !imageBase64)
-      return res.status(400).json({ error: 'Missing imageUrl or imageBase64' })
+      return res.status(400).json(withCid({ error: 'Missing imageUrl or imageBase64' }))
 
     const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
+    if (!apiKey) return res.status(500).json(withCid({ error: 'API key not configured' }))
 
     // If the client already uploaded the image bytes, use that directly.
     if (imageBase64) {
@@ -245,16 +250,18 @@ export default async function handler(req, res) {
           res.setHeader('Retry-After', '3')
           return res
             .status(503)
-            .json({ error: 'Overloaded. Please try again in a moment.', status })
+            .json(withCid({ error: 'Overloaded. Please try again in a moment.', status: 503 }))
         }
-        return res.status(status).json({ error: err, status })
+        return res.status(status).json(withCid({ error: err, status }))
       }
 
       const text = data.content?.[0]?.text || ''
       const clean = text.replace(/```json|```/g, '').trim()
       const extracted = normalizeExtractedDates(JSON.parse(clean))
       const verified = await verifyAndNormalizeAddress(extracted)
-      return res.status(200).json({ extracted: { ...extracted, ...verified } })
+      if (correlationId)
+        console.log('[meetmap]', 'extract-flyer', 'ok', { correlationId, mode: 'base64' })
+      return res.status(200).json(withCid({ extracted: { ...extracted, ...verified } }))
     }
 
     // Fetch the flyer image server-side to avoid CORS issues in the browser.
@@ -441,7 +448,7 @@ export default async function handler(req, res) {
         data?.message ||
         (typeof data?.error === 'string' ? data.error : null) ||
         JSON.stringify(data)
-      return res.status(response.status).json({ error: err, status: response.status })
+      return res.status(response.status).json(withCid({ error: err, status: response.status }))
     }
 
     const text = data.content?.[0]?.text || ''
@@ -449,9 +456,17 @@ export default async function handler(req, res) {
     const extracted = normalizeExtractedDates(JSON.parse(clean))
     const verified = await verifyAndNormalizeAddress(extracted)
 
-    res.status(200).json({ extracted: { ...extracted, ...verified } })
+    if (correlationId)
+      console.log('[meetmap]', 'extract-flyer', 'ok', { correlationId, mode: 'url' })
+    res.status(200).json(withCid({ extracted: { ...extracted, ...verified } }))
   } catch (e) {
-    console.error('extract-flyer error:', e)
-    res.status(500).json({ error: e.message || 'Failed to extract flyer' })
+    console.error('extract-flyer error:', e, correlationId ? { correlationId } : '')
+    res
+      .status(500)
+      .json(
+        correlationId
+          ? { error: e.message || 'Failed to extract flyer', correlationId }
+          : { error: e.message || 'Failed to extract flyer' },
+      )
   }
 }

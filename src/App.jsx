@@ -38,6 +38,7 @@ import ImportQueueModal from './components/ImportQueueModal'
 import ModerationQueueModal from './components/ModerationQueueModal'
 import { apiUrl } from './lib/apiOrigin'
 import { geocodeAddress } from './lib/geocode'
+import { makeClientUuid } from './lib/clientUuid'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -838,12 +839,14 @@ function AppInner() {
           }
         } catch {}
 
+        const importCorrelationId = makeClientUuid()
         const resp = await fetch(apiUrl('/api/extract-flyer'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             imageUrl: importParams.imageUrl,
             sourceUrl: importParams.sourceUrl,
+            correlationId: importCorrelationId,
           }),
         })
         const json = await resp.json()
@@ -910,6 +913,7 @@ function AppInner() {
       if (!m) throw new Error('Unsupported image file')
       const mediaType = m[1]
       const imageBase64 = m[2]
+      const uploadImportCorrelationId = makeClientUuid()
 
       const resp = await fetch(apiUrl('/api/extract-flyer'), {
         method: 'POST',
@@ -919,6 +923,7 @@ function AppInner() {
           imageUrl: importParams.imageUrl || '',
           imageBase64,
           mediaType,
+          correlationId: uploadImportCorrelationId,
         }),
       })
       const json = await resp.json()
@@ -940,7 +945,9 @@ function AppInner() {
         return
       }
 
-      const storedImageUrl = await uploadFlyerImportImage(file, user.id)
+      const storedImageUrl = await uploadFlyerImportImage(file, user.id, {
+        correlationId: uploadImportCorrelationId,
+      })
 
       await createFlyerImport({
         userId: user.id,

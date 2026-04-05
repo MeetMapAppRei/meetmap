@@ -164,7 +164,12 @@ const S = {
   },
 }
 
-async function postExtractFlyer(endpoint, imageBase64, mediaType = 'image/jpeg') {
+async function postExtractFlyer(
+  endpoint,
+  imageBase64,
+  mediaType = 'image/jpeg',
+  correlationId = '',
+) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const timeout = controller ? setTimeout(() => controller.abort(), 35000) : null
   let response
@@ -178,6 +183,7 @@ async function postExtractFlyer(endpoint, imageBase64, mediaType = 'image/jpeg')
       body: JSON.stringify({
         imageBase64,
         mediaType,
+        ...(correlationId ? { correlationId } : {}),
       }),
       signal: controller?.signal,
     })
@@ -187,7 +193,7 @@ async function postExtractFlyer(endpoint, imageBase64, mediaType = 'image/jpeg')
   return response
 }
 
-async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg') {
+async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg', correlationId = '') {
   const candidates = [
     apiUrl('/api/extract-flyer'),
     'https://findcarmeets.com/api/extract-flyer',
@@ -199,7 +205,7 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg') {
 
   for (const endpoint of endpoints) {
     try {
-      response = await postExtractFlyer(endpoint, imageBase64, mediaType)
+      response = await postExtractFlyer(endpoint, imageBase64, mediaType, correlationId)
       if (response.ok) break
 
       // If the server responded with a transient 5xx, try the next endpoint.
@@ -288,13 +294,13 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg') {
   return data.extracted
 }
 
-async function extractFlyerInfo(imageBase64, mediaType = 'image/jpeg') {
+async function extractFlyerInfo(imageBase64, mediaType = 'image/jpeg', correlationId = '') {
   const maxAttempts = 4
   let lastErr
   for (let i = 0; i < maxAttempts; i++) {
     try {
       if (i > 0) await new Promise((r) => setTimeout(r, 750 * i))
-      return await extractFlyerInfoOnce(imageBase64, mediaType)
+      return await extractFlyerInfoOnce(imageBase64, mediaType, correlationId)
     } catch (e) {
       lastErr = e
       const msg = e?.message || ''
@@ -464,6 +470,7 @@ export default function PostEventForm({ onClose, onPosted }) {
     setFlyerDates([])
     clearPostPrefill()
     try {
+      const flyerCorrelationId = makeClientUuid()
       // The backend has a request body limit, and base64 inflates payload size.
       // Compress first for better mobile reliability.
       const aiFile = await compressImageForUpload(file, { maxWidth: 1400, quality: 0.8 })
@@ -481,7 +488,7 @@ export default function PostEventForm({ onClose, onPosted }) {
         reader.onerror = reject
         reader.readAsDataURL(aiFile)
       })
-      const info = await extractFlyerInfo(base64, mediaType)
+      const info = await extractFlyerInfo(base64, mediaType, flyerCorrelationId)
       // Fill in the form with extracted info
       const bestAddress = info.verified_address || info.address || ''
       const geocodeQuery = buildGeocodeQuery(bestAddress, info.city)
