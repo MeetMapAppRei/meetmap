@@ -456,8 +456,14 @@ async function fileToBase64Payload(file) {
   })
 }
 
+function errorWithStatus(message, status) {
+  const e = new Error(message)
+  if (status != null) e.status = status
+  return e
+}
+
 /** Server relay (JSON + base64) — avoids mobile browser PUT/CORS issues to R2. */
-async function relayUploadToR2(file, key, token) {
+async function relayUploadToR2(file, key, token, correlationId) {
   const base64Data = await fileToBase64Payload(file)
   const relayPayload = JSON.stringify({
     key,
@@ -473,13 +479,17 @@ async function relayUploadToR2(file, key, token) {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          ...(correlationId ? { 'X-Correlation-Id': String(correlationId) } : {}),
         },
         body: relayPayload,
         cache: 'no-store',
       })
       const relayJson = await relay.json().catch(() => ({}))
       if (relay.ok) return
-      lastRelayErr = new Error(relayJson.error || `Upload relay failed (${relay.status})`)
+      lastRelayErr = errorWithStatus(
+        relayJson.error || `Upload relay failed (${relay.status})`,
+        relay.status,
+      )
     } catch (e) {
       lastRelayErr = e instanceof Error ? e : new Error(String(e))
     }
@@ -488,12 +498,13 @@ async function relayUploadToR2(file, key, token) {
 }
 
 /** Browser PUT to R2 using Vercel-issued presigned URL (secrets stay on server). */
-async function uploadImageViaR2Presign(file, body) {
+async function uploadImageViaR2Presign(file, body, options = {}) {
+  const correlationId = options.correlationId || ''
   const {
     data: { session },
   } = await supabase.auth.getSession()
   const token = session?.access_token
-  if (!token) throw new Error('Sign in to upload photos')
+  if (!token) throw errorWithStatus('Sign in to upload photos', 401)
 
   const presignUrls = apiUrlCandidates('/api/storage-presign')
   let json = {}
@@ -505,6 +516,7 @@ async function uploadImageViaR2Presign(file, body) {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          ...(correlationId ? { 'X-Correlation-Id': String(correlationId) } : {}),
         },
         body: JSON.stringify(body),
         cache: 'no-store',
@@ -514,7 +526,7 @@ async function uploadImageViaR2Presign(file, body) {
         json = j
         break
       }
-      lastPresignErr = new Error(j.error || `Presign failed (${pres.status})`)
+      lastPresignErr = errorWithStatus(j.error || `Presign failed (${pres.status})`, pres.status)
     } catch (e) {
       lastPresignErr = e
     }
@@ -528,7 +540,7 @@ async function uploadImageViaR2Presign(file, body) {
   // Mobile Safari / Chrome often block or flake on cross-origin PUT to R2; try relay first.
   if (isMobileBrowser()) {
     try {
-      await relayUploadToR2(file, key, token)
+      await relayUploadToR2(file, key, token, correlationId)
       return publicUrl
     } catch (e) {
       console.warn('meetmap: relay-first upload failed, trying direct PUT', e)
@@ -546,23 +558,25 @@ async function uploadImageViaR2Presign(file, body) {
     })
     if (!put.ok) {
       const t = await put.text().catch(() => '')
-      throw new Error(`Upload failed (${put.status}) ${t.slice(0, 120)}`)
+      throw errorWithStatus(`Upload failed (${put.status}) ${t.slice(0, 120)}`, put.status)
     }
   } catch (err) {
     // Mobile WebView CORS quirks: fallback to server-side upload via API (try multiple hosts).
     try {
-      await relayUploadToR2(file, key, token)
+      await relayUploadToR2(file, key, token, correlationId)
       return publicUrl
     } catch (relayErr) {
       const primary = err instanceof Error ? err : new Error(String(err))
       const secondary = relayErr instanceof Error ? relayErr : new Error(String(relayErr))
-      throw new Error(`${primary.message} | ${secondary.message}`)
+      const merged = new Error(`${primary.message} | ${secondary.message}`)
+      merged.status = secondary.status ?? primary.status
+      throw merged
     }
   }
   return publicUrl
 }
 
-export const uploadEventPhoto = async (file, eventId) => {
+export const uploadEventPhoto = async (file, eventId, uploadOptions = {}) => {
   // Event photos are shown frequently in list/detail views; reduce upload size for mobile reliability.
   // Cap binary size so base64 relay JSON stays under serverless body limits (~4/3 expansion).
   const ready = await compressImageForUploadUnder(file, 3_200_000, {
@@ -574,12 +588,16 @@ export const uploadEventPhoto = async (file, eventId) => {
   const contentType = ready.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`
 
   if (isR2StorageEnabled()) {
-    return uploadImageViaR2Presign(ready, {
-      folder: 'events',
-      eventId,
-      fileExt: safeExt,
-      contentType,
-    })
+    return uploadImageViaR2Presign(
+      ready,
+      {
+        folder: 'events',
+        eventId,
+        fileExt: safeExt,
+        contentType,
+      },
+      { correlationId: uploadOptions.correlationId },
+    )
   }
 
   const path = `events/${eventId}/${Date.now()}.${safeExt}`
@@ -592,7 +610,7 @@ export const uploadEventPhoto = async (file, eventId) => {
   return data.publicUrl
 }
 
-export const uploadFlyerImportImage = async (file, userId) => {
+export const uploadFlyerImportImage = async (file, userId, uploadOptions = {}) => {
   if (!file) throw new Error('Missing file')
   if (!userId) throw new Error('Missing userId')
   const ready = await compressImageForUploadUnder(file, 3_200_000, {
@@ -604,12 +622,16 @@ export const uploadFlyerImportImage = async (file, userId) => {
   const contentType = ready.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`
 
   if (isR2StorageEnabled()) {
-    return uploadImageViaR2Presign(ready, {
-      folder: 'flyer-imports',
-      userId,
-      fileExt: safeExt,
-      contentType,
-    })
+    return uploadImageViaR2Presign(
+      ready,
+      {
+        folder: 'flyer-imports',
+        userId,
+        fileExt: safeExt,
+        contentType,
+      },
+      { correlationId: uploadOptions.correlationId },
+    )
   }
 
   const path = `flyer-imports/${userId}/${Date.now()}.${safeExt}`

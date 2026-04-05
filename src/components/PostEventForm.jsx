@@ -4,25 +4,9 @@ import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
+import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import { compressImageForUpload } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
-
-/** Submit failures reuse humanizeFetchError(); make upload/save steps explicit (not “signal”). */
-function messageForPostSubmitError(stage, err) {
-  const base = humanizeFetchError(err)
-  const genericSignal =
-    base === 'Connection problem. Check your signal and try again.' ||
-    base === 'Connection timed out. Please try again.'
-  if (!genericSignal) return base
-  if (stage === 'uploading_photo') {
-    return "Couldn't upload your photo. Check your connection and try again."
-  }
-  if (stage === 'creating_event') {
-    return "Couldn't save your meet. Check your connection and try again."
-  }
-  // Stage not set (error before upload/create) or unknown — still a post failure, not “cell signal”.
-  return "Couldn't post your meet. Check your connection and try again."
-}
 
 function isTransientNetworkError(e) {
   const m = String(
@@ -591,7 +575,9 @@ export default function PostEventForm({ onClose, onPosted }) {
     let didAttemptCreate = false
     let rollbackRequired = false
     let stage = ''
+    let correlationId = ''
     try {
+      correlationId = makeClientUuid()
       let finalCoords = coords
       if (form.address && !finalCoords) {
         finalCoords = await withNetworkRetries(() =>
@@ -610,7 +596,10 @@ export default function PostEventForm({ onClose, onPosted }) {
       let photoUrl = null
       if (hasPhotoAtSubmit && clientEventId) {
         stage = 'uploading_photo'
-        photoUrl = await withNetworkRetries(() => uploadEventPhoto(photo, clientEventId), 7)
+        photoUrl = await withNetworkRetries(
+          () => uploadEventPhoto(photo, clientEventId, { correlationId }),
+          7,
+        )
         if (!String(photoUrl || '').trim()) {
           throw new Error('Connection problem while uploading photo. Please try again.')
         }
@@ -644,11 +633,12 @@ export default function PostEventForm({ onClose, onPosted }) {
       onPosted(created)
       onClose()
     } catch (e) {
-      console.error('PostEventForm submit failed (stage:', stage, '):', e)
+      console.error('PostEventForm submit failed', { stage, correlationId, err: e })
       const isConn = isTransientNetworkError(e)
-      setError(messageForPostSubmitError(stage, e))
+      setError(userMessageForPostSubmitError(stage, e, correlationId))
       void reportSubmitDiagnostic({
         stage,
+        correlationId,
         message: String(e?.message || ''),
         code: String(e?.code || ''),
         details: String(e?.details || e?.hint || ''),

@@ -24,6 +24,7 @@ export default async function handler(req, res) {
     const appVersion = String(body.appVersion || '').slice(0, 40)
     const hasPhoto = !!body.hasPhoto
     const userAgent = String(body.userAgent || '').slice(0, 240)
+    const correlationId = String(body.correlationId || '').slice(0, 80)
 
     // Structured one-line log for easy filtering in Vercel runtime logs.
     console.error(
@@ -32,6 +33,7 @@ export default async function handler(req, res) {
         at: now,
         event,
         stage,
+        correlationId: correlationId || undefined,
         message,
         code,
         details,

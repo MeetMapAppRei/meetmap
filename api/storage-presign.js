@@ -44,10 +44,12 @@ function r2Client() {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-Id')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const correlationId = String(req.headers['x-correlation-id'] || '').slice(0, 80)
 
   const authHeader = req.headers.authorization
   const jwt = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
@@ -114,9 +116,12 @@ export default async function handler(req, res) {
     const uploadUrl = await getSignedUrl(client, command, { expiresIn: 3600 })
     const publicUrl = `${publicBase}/${key}`
 
+    if (correlationId) {
+      console.log('[meetmap]', 'storage-presign', 'ok', { correlationId, folder: body.folder })
+    }
     return res.status(200).json({ uploadUrl, publicUrl, key })
   } catch (e) {
-    console.error('storage-presign error:', e)
+    console.error('storage-presign error:', e, correlationId ? { correlationId } : '')
     return res.status(500).json({ error: e.message || 'Presign failed' })
   }
 }

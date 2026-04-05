@@ -53,10 +53,12 @@ function isAllowedKeyForUser(key, userId) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-Id')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const correlationId = String(req.headers['x-correlation-id'] || '').slice(0, 80)
 
   const authHeader = req.headers.authorization
   const jwt = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
@@ -101,9 +103,12 @@ export default async function handler(req, res) {
       }),
     )
 
+    if (correlationId) {
+      console.log('[meetmap]', 'storage-upload', 'ok', { correlationId, keyBytes: bytes.length })
+    }
     return res.status(200).json({ ok: true })
   } catch (e) {
-    console.error('storage-upload error:', e)
+    console.error('storage-upload error:', e, correlationId ? { correlationId } : '')
     return res.status(500).json({ error: e.message || 'Upload failed' })
   }
 }
