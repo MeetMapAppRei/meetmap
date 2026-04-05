@@ -53,12 +53,40 @@ export async function compressImageForUpload(file, options = {}) {
     canvas.toBlob((b) => resolve(b), 'image/jpeg', quality)
   })
   if (!blob) return file
-  // Don't replace if compression didn't help
-  if (blob.size >= file.size * 0.95) return file
+  // Don't replace if compression didn't help (unless caller needs a JPEG for size caps / relay uploads)
+  if (!options.forceOutput && blob.size >= file.size * 0.95) return file
 
   const base = String(file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo'
   return new File([blob], `${base}.jpg`, {
     type: 'image/jpeg',
     lastModified: Date.now(),
   })
+}
+
+/**
+ * Shrink until under maxBytes (for R2 relay JSON uploads — base64 inflates ~4/3×).
+ * @param {File|Blob} file
+ * @param {number} [maxBytes]
+ * @param {{ maxWidth?: number, quality?: number }} [seed]
+ */
+export async function compressImageForUploadUnder(file, maxBytes = 3_200_000, seed = {}) {
+  if (!file || typeof file !== 'object') return file
+  if (file.size > 0 && file.size <= maxBytes) return file
+
+  let w = seed.maxWidth ?? 1000
+  let q = seed.quality ?? 0.68
+  let cur = file
+
+  for (let pass = 0; pass < 10; pass++) {
+    const next = await compressImageForUpload(cur, {
+      maxWidth: w,
+      quality: q,
+      forceOutput: true,
+    })
+    cur = next
+    if (cur.size <= maxBytes) return cur
+    w = Math.max(480, Math.floor(w * 0.88))
+    q = Math.max(0.42, q - 0.07)
+  }
+  return cur
 }

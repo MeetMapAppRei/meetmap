@@ -3,7 +3,8 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '12mb',
+      // Base64 JSON is ~4/3 the binary size; keep headroom for large phone photos.
+      sizeLimit: '15mb',
     },
   },
 }
