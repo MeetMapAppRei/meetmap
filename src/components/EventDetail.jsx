@@ -15,6 +15,8 @@ import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'
 import { geocodeAddress } from '../lib/geocode'
+import { makeClientUuid } from '../lib/clientUuid'
+import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import ReportEventModal from './ReportEventModal'
 
 const TYPE_COLORS = {
@@ -135,6 +137,7 @@ function EditForm({ event, onSaved, onCancel }) {
     }
     setError('')
     setSaving(true)
+    const correlationId = makeClientUuid()
     try {
       let finalCoords = coords
       if (form.address && !finalCoords)
@@ -165,14 +168,19 @@ function EditForm({ event, onSaved, onCancel }) {
       }
 
       if (photo) {
-        const photoUrl = await uploadEventPhoto(photo, event.id)
-        updates.photo_url = photoUrl
+        try {
+          const photoUrl = await uploadEventPhoto(photo, event.id, { correlationId })
+          updates.photo_url = photoUrl
+        } catch (e) {
+          setError(userMessageForPostSubmitError('uploading_photo', e, correlationId))
+          return
+        }
       }
 
       const updated = await updateEvent(event.id, updates)
       onSaved(updated)
     } catch (e) {
-      setError(e.message)
+      setError(userMessageForPostSubmitError('creating_event', e, correlationId))
     } finally {
       setSaving(false)
     }

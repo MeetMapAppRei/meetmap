@@ -7,6 +7,7 @@ import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import { compressImageForUpload } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
+import { makeClientUuid } from '../lib/clientUuid'
 
 function isTransientNetworkError(e) {
   const m = String(
@@ -101,29 +102,6 @@ async function deleteEventBestEffort(eventId) {
   try {
     await supabase.from('events').delete().eq('id', eventId)
   } catch {}
-}
-
-function makeClientUuid() {
-  try {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-  } catch {}
-  // Fallback for older environments: generate UUID v4.
-  const bytes = new Uint8Array(16)
-  try {
-    if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes)
-    else {
-      for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
-    }
-  } catch {
-    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
-  }
-  // Per RFC 4122 section 4.4.
-  bytes[6] = (bytes[6] & 0x0f) | 0x40
-  bytes[8] = (bytes[8] & 0x3f) | 0x80
-  const hex = Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 const S = {
@@ -1016,9 +994,34 @@ export default function PostEventForm({ onClose, onPosted }) {
                 lineHeight: 1.4,
               }}
             >
-              Tap a date to use it for the map listing (one date per post). Other dates are only on
-              the flyer—add them as separate posts if needed.
+              Tap a date for this listing (one date per post). After you post, use &quot;Next flyer
+              date&quot; to jump to another day with the same details, then post again.
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                const idx = flyerDates.indexOf(form.date)
+                const next = idx >= 0 ? flyerDates[(idx + 1) % flyerDates.length] : flyerDates[0]
+                set('date', next)
+                if (missingFields.includes('date'))
+                  setMissingFields((prev) => prev.filter((k) => k !== 'date'))
+              }}
+              style={{
+                marginTop: 10,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: `1px solid ${isLight ? '#E5E5E5' : '#333'}`,
+                background: isLight ? '#FFFFFF' : '#1A1A1A',
+                color: isLight ? '#111' : '#F0F0F0',
+                cursor: 'pointer',
+                width: '100%',
+              }}
+            >
+              Next flyer date →
+            </button>
           </div>
         )}
 
