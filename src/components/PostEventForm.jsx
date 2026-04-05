@@ -5,7 +5,7 @@ import { useTheme } from '../lib/ThemeContext'
 import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
-import { compressImageForUpload } from '../lib/compressImageForUpload'
+import { compressImageForUploadUnder } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
 import { makeClientUuid } from '../lib/clientUuid'
 import { savePostPrefill, loadAndConsumePostPrefill, clearPostPrefill } from '../lib/postPrefill'
@@ -475,9 +475,6 @@ export default function PostEventForm({ onClose, onPosted }) {
   const handleFlyerUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
-    // Reuse the flyer as the event photo so users don't need a second upload.
-    setPhoto(file)
-    setPhotoPreview(URL.createObjectURL(file))
     setScanning(true)
     setError('')
     setFlyerSuccess(false)
@@ -486,22 +483,24 @@ export default function PostEventForm({ onClose, onPosted }) {
     let flyerCorrelationId = ''
     try {
       flyerCorrelationId = makeClientUuid()
-      // The backend has a request body limit, and base64 inflates payload size.
-      // Compress first for better mobile reliability.
-      const aiFile = await compressImageForUpload(file, { maxWidth: 1400, quality: 0.8 })
-      if (aiFile.size > 8 * 1024 * 1024) {
-        throw new Error(
-          'That flyer file is too large for AI extraction on mobile. Try a smaller/cropped image (under ~8MB).',
-        )
-      }
+      // Same size budget as uploadEventPhoto → R2 relay: smaller base64 JSON, fewer mobile failures.
+      // Also normalizes HEIC/large originals to JPEG before we set `photo` for submit.
+      const ready = await compressImageForUploadUnder(file, 3_200_000, {
+        maxWidth: 1400,
+        quality: 0.72,
+      })
+
+      // Reuse the flyer as the event photo — must be `ready`, not the original file.
+      setPhoto(ready)
+      setPhotoPreview(URL.createObjectURL(ready))
 
       // Convert to base64
-      const mediaType = aiFile.type || file.type || 'image/jpeg'
+      const mediaType = ready.type || 'image/jpeg'
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result.split(',')[1])
         reader.onerror = reject
-        reader.readAsDataURL(aiFile)
+        reader.readAsDataURL(ready)
       })
       const info = await extractFlyerInfo(base64, mediaType, flyerCorrelationId)
       // Fill in the form with extracted info
