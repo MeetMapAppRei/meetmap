@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Capacitor } from '@capacitor/core'
 import { useTheme } from '../lib/ThemeContext'
 
 const STORAGE_KEY = 'meetmap:android-app-promo-snooze-until'
@@ -6,11 +8,10 @@ const SNOOZE_MS = 10 * 24 * 60 * 60 * 1000
 
 const defaultPlayUrl = 'https://play.google.com/store/apps/details?id=com.meetmap.app'
 
-function isCapacitorNative() {
-  if (typeof window === 'undefined') return false
+/** Hide promo inside the installed Capacitor shell (Play Store / native app). */
+function isNativeAppShell() {
   try {
-    const c = window.Capacitor
-    return Boolean(c && typeof c.isNativePlatform === 'function' && c.isNativePlatform())
+    return Capacitor.isNativePlatform()
   } catch {
     return false
   }
@@ -41,7 +42,7 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
       : `env(safe-area-inset-bottom, 0px)`
 
   useEffect(() => {
-    if (isCapacitorNative()) return
+    if (isNativeAppShell()) return
     const until = readSnoozeUntil()
     if (Date.now() < until) return
     setVisible(true)
@@ -58,14 +59,14 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
     setVisible(false)
   }
 
-  if (!visible) return null
+  if (!visible || typeof document === 'undefined') return null
 
   const border = isLight ? '#E5E5E5' : '#2A2A2A'
   const bg = isLight ? '#FFFFFF' : '#141414'
   const text = isLight ? '#222' : '#E8E8E8'
   const muted = isLight ? '#666' : '#9A9A9A'
 
-  return (
+  const shell = (
     <div
       role="dialog"
       aria-label="Get the Meet Map Android app"
@@ -74,8 +75,10 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
         left: 0,
         right: 0,
         bottom,
-        zIndex: 250,
+        zIndex: 99999,
         padding: '12px 14px 12px',
+        paddingLeft: 'max(14px, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(14px, env(safe-area-inset-right, 0px))',
         background: bg,
         borderTop: `1px solid ${border}`,
         boxShadow: isLight ? '0 -8px 32px rgba(0,0,0,0.08)' : '0 -8px 32px rgba(0,0,0,0.45)',
@@ -83,7 +86,8 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
     >
       <div
         style={{
-          maxWidth: 480,
+          maxWidth: 720,
+          width: '100%',
           margin: '0 auto',
           display: 'flex',
           flexDirection: 'column',
@@ -190,4 +194,6 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
       </div>
     </div>
   )
+
+  return createPortal(shell, document.body)
 }

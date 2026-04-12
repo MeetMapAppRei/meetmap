@@ -11,4 +11,3 @@ function run(cmd, args) {
 
 run('npm', ['run', 'build:mobile'])
 run('npx', ['cap', 'sync', 'android'])
-

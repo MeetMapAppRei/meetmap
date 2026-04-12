@@ -16,4 +16,3 @@ function run(cmd, args) {
 run('node', ['scripts/bump-android-version.mjs'])
 run('npm', ['run', 'build:mobile'])
 run('npx', ['cap', 'sync', 'android'])
-
