@@ -237,6 +237,9 @@ function AppInner() {
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
   const PLAY_STORE_PROMO_RESERVE = 132 // Extra scroll space when the Play Store promo strip is open above the nav.
   const [playStorePromoOpen, setPlayStorePromoOpen] = useState(false)
+  const handlePlayStoreBannerVisibility = useCallback((open, meta) => {
+    setPlayStorePromoOpen(Boolean(open && meta?.placement !== 'top'))
+  }, [])
 
   // Prevent triggering Supabase queries on every keystroke.
   useEffect(() => {
@@ -1079,6 +1082,7 @@ function AppInner() {
         maxWidth: 480,
         margin: '0 auto',
         position: 'relative',
+        paddingTop: 'var(--meetmap-play-promo-top, 0px)',
       }}
     >
       <style>{`
@@ -1748,7 +1752,7 @@ function AppInner() {
 
       <PlayStoreBanner
         bottomOffsetPx={BOTTOM_NAV_HEIGHT}
-        onVisibilityChange={setPlayStorePromoOpen}
+        onVisibilityChange={handlePlayStoreBannerVisibility}
       />
     </div>
   )
