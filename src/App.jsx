@@ -36,6 +36,7 @@ import EventCard from './components/EventCard'
 import MapView from './components/MapView'
 import ImportQueueModal from './components/ImportQueueModal'
 import ModerationQueueModal from './components/ModerationQueueModal'
+import PlayStoreBanner from './components/PlayStoreBanner'
 import { apiUrl } from './lib/apiOrigin'
 import { geocodeAddress } from './lib/geocode'
 import { makeClientUuid } from './lib/clientUuid'
@@ -234,6 +235,8 @@ function AppInner() {
   const [nearMeError, setNearMeError] = useState('')
   const [thisWeekOnly, setThisWeekOnly] = useState(false)
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
+  const PLAY_STORE_PROMO_RESERVE = 132 // Extra scroll space when the Play Store promo strip is open above the nav.
+  const [playStorePromoOpen, setPlayStorePromoOpen] = useState(false)
 
   // Prevent triggering Supabase queries on every keystroke.
   useEffect(() => {
@@ -1306,7 +1309,7 @@ function AppInner() {
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search events, city, tags..."
+            placeholder="Search name, city, address, venue, tags..."
             style={{
               width: '100%',
               background: isLight ? '#FFFFFF' : '#111',
@@ -1485,7 +1488,9 @@ function AppInner() {
               setSelectedEvent(e)
             }}
             centerOn={nearMeOnly ? nearMeCoords : null}
-            bottomNavHeight={BOTTOM_NAV_HEIGHT}
+            bottomNavHeight={
+              BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)
+            }
           />
         </div>
       )}
@@ -1498,7 +1503,7 @@ function AppInner() {
             paddingLeft: 16,
             paddingRight: 16,
             paddingTop: 12,
-            paddingBottom: `calc(${BOTTOM_NAV_HEIGHT}px + env(safe-area-inset-bottom))`,
+            paddingBottom: `calc(${BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)}px + env(safe-area-inset-bottom))`,
           }}
         >
           {loading ? (
@@ -1740,6 +1745,11 @@ function AppInner() {
           }}
         />
       )}
+
+      <PlayStoreBanner
+        bottomOffsetPx={BOTTOM_NAV_HEIGHT}
+        onVisibilityChange={setPlayStorePromoOpen}
+      />
     </div>
   )
 }

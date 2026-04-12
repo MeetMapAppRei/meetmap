@@ -36,6 +36,38 @@ const normalizeStatus = (value) => {
 
 const DUPLICATE_EVENT_MESSAGE = 'An event with the same title, date, and city already exists.'
 
+/** PostgREST `.or()` splits on commas; quote values so searches like "New Britain, CT" work. */
+const postgrestQuotedOrValue = (value) =>
+  `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '""')}"`
+
+/** Treat `%` / `_` in user input as literals inside ILIKE patterns. */
+const escapeIlikeUserText = (s) =>
+  String(s).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+
+/** Single text[] element for `cs` (contains) filter, including spaces/special chars. */
+const postgrestTextArrayElementForCs = (term) => {
+  const t = String(term || '')
+  if (/^[a-z0-9_-]+$/i.test(t)) return t
+  return `"${t.replace(/\\/g, '\\\\').replace(/"/g, '""')}"`
+}
+
+/**
+ * title/city/address/location/host ILIKE + optional tags.cs (same element).
+ * Uses quoted ILIKE patterns so commas in the search string do not break `.or()`.
+ */
+const buildEventsSearchOrFilter = (search) => {
+  const term = String(search || '').trim()
+  if (!term) return null
+  const pattern = postgrestQuotedOrValue(`%${escapeIlikeUserText(term)}%`)
+  const cols = ['title', 'city', 'address', 'location', 'host']
+  const parts = cols.map((col) => `${col}.ilike.${pattern}`)
+  parts.push(`tags.cs.{${postgrestTextArrayElementForCs(term)}}`)
+  return parts.join(',')
+}
+
+const EVENT_FETCH_PAGE_SIZE = 1000
+const EVENT_FETCH_MAX_PAGES = 50
+
 const mapCreateEventError = (error) => {
   const code = String(error?.code || '')
   const message = String(error?.message || '')
@@ -226,33 +258,38 @@ export const createEventUpdate = async (eventId, userId, message) => {
 // ═══ EVENTS ══════════════════════════════════════════════════
 
 export const fetchEvents = async (filters = {}) => {
-  let query = supabase
-    .from('events')
-    // Explicitly include `address` so the UI can always display the full street address.
-    .select(
-      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
-    )
-    .order('date', { ascending: true })
+  const searchOr = filters.search ? buildEventsSearchOrFilter(filters.search) : null
+  const todayKey = new Date().toISOString().split('T')[0]
 
-  if (filters.type && filters.type !== 'all') {
-    query = query.eq('type', filters.type)
+  const rows = []
+  for (let page = 0; page < EVENT_FETCH_MAX_PAGES; page++) {
+    let query = supabase
+      .from('events')
+      // Explicitly include `address` so the UI can always display the full street address.
+      .select(
+        'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
+      )
+      .order('date', { ascending: true })
+      .order('id', { ascending: true })
+
+    if (filters.type && filters.type !== 'all') {
+      query = query.eq('type', filters.type)
+    }
+    if (searchOr) {
+      query = query.or(searchOr)
+    }
+    if (!filters.showPast) {
+      query = query.gte('date', todayKey)
+    }
+
+    const from = page * EVENT_FETCH_PAGE_SIZE
+    const to = from + EVENT_FETCH_PAGE_SIZE - 1
+    const { data, error } = await query.range(from, to)
+    if (error) throw error
+    const chunk = data || []
+    rows.push(...chunk)
+    if (chunk.length < EVENT_FETCH_PAGE_SIZE) break
   }
-
-  if (filters.search) {
-    query = query.or(
-      `title.ilike.%${filters.search}%,city.ilike.%${filters.search}%,tags.cs.{${filters.search}}`,
-    )
-  }
-
-  // Hide past events by default unless showPast is true
-  if (!filters.showPast) {
-    const today = new Date().toISOString().split('T')[0]
-    query = query.gte('date', today)
-  }
-
-  const { data, error } = await query
-  if (error) throw error
-  const rows = data || []
   try {
     const statusMap = await fetchEventStatusMap(rows.map((e) => e.id))
     const updateMap = await fetchLatestEventUpdateMap(rows.map((e) => e.id))
@@ -634,10 +671,12 @@ export const uploadEventPhoto = async (file, eventId, uploadOptions = {}) => {
 export const uploadFlyerImportImage = async (file, userId, uploadOptions = {}) => {
   if (!file) throw new Error('Missing file')
   if (!userId) throw new Error('Missing userId')
-  const ready = await compressImageForUploadUnder(file, R2_RELAY_IMAGE_MAX_BYTES, {
-    maxWidth: 1280,
-    quality: 0.78,
-  })
+  const ready = uploadOptions.skipCompress
+    ? file
+    : await compressImageForUploadUnder(file, R2_RELAY_IMAGE_MAX_BYTES, {
+        maxWidth: 1280,
+        quality: 0.78,
+      })
   const ext = (ready.name.split('.').pop() || 'jpg').toLowerCase()
   const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg'
   const contentType = ready.type || `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`

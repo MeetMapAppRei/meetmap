@@ -1,5 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { createEvent, uploadEventPhoto, supabase, R2_RELAY_IMAGE_MAX_BYTES } from '../lib/supabase'
+import {
+  createEvent,
+  uploadEventPhoto,
+  uploadFlyerImportImage,
+  supabase,
+  R2_RELAY_IMAGE_MAX_BYTES,
+} from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
 import { apiUrl } from '../lib/apiOrigin'
@@ -164,14 +170,26 @@ const S = {
   },
 }
 
-async function postExtractFlyer(
-  endpoint,
-  imageBase64,
-  mediaType = 'image/jpeg',
-  correlationId = '',
-) {
+function extractFlyerFetchTimeoutMs({ imageUrl }) {
+  const cap = typeof window !== 'undefined' && window.Capacitor
+  // Tiny JSON when the server fetches the image itself — WebView-friendly.
+  if (imageUrl) return cap ? 90000 : 55000
+  // Large base64 body: Android WebView often needs more time for upload + serverless cold start.
+  return cap ? 120000 : 55000
+}
+
+async function postExtractFlyer(endpoint, { imageBase64, mediaType, imageUrl, correlationId }) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timeout = controller ? setTimeout(() => controller.abort(), 35000) : null
+  const timeoutMs = extractFlyerFetchTimeoutMs({ imageUrl })
+  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
+  const body = {}
+  if (correlationId) body.correlationId = correlationId
+  if (imageUrl) {
+    body.imageUrl = imageUrl
+  } else {
+    body.imageBase64 = imageBase64
+    body.mediaType = mediaType || 'image/jpeg'
+  }
   let response
   try {
     response = await fetch(endpoint, {
@@ -180,11 +198,7 @@ async function postExtractFlyer(
       // Reduce caching oddities; also avoid sending cookies to third-party endpoints.
       cache: 'no-store',
       credentials: 'omit',
-      body: JSON.stringify({
-        imageBase64,
-        mediaType,
-        ...(correlationId ? { correlationId } : {}),
-      }),
+      body: JSON.stringify(body),
       signal: controller?.signal,
     })
   } finally {
@@ -193,10 +207,21 @@ async function postExtractFlyer(
   return response
 }
 
-async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg', correlationId = '') {
+async function extractFlyerInfoOnce(
+  imageBase64,
+  mediaType = 'image/jpeg',
+  correlationId = '',
+  options = {},
+) {
+  const imageUrl = String(options.imageUrl || '').trim()
+  const useUrl = Boolean(imageUrl)
+  if (!useUrl && !String(imageBase64 || '').trim()) {
+    throw new Error('Missing flyer image')
+  }
   const candidates = [
     apiUrl('/api/extract-flyer'),
     'https://findcarmeets.com/api/extract-flyer',
+    'https://www.findcarmeets.com/api/extract-flyer',
     'https://meetmap-gilt.vercel.app/api/extract-flyer',
   ]
   const endpoints = Array.from(new Set(candidates.filter(Boolean)))
@@ -205,7 +230,12 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg', corre
 
   for (const endpoint of endpoints) {
     try {
-      response = await postExtractFlyer(endpoint, imageBase64, mediaType, correlationId)
+      response = await postExtractFlyer(endpoint, {
+        imageBase64: useUrl ? undefined : imageBase64,
+        mediaType,
+        imageUrl: useUrl ? imageUrl : undefined,
+        correlationId,
+      })
       if (response.ok) break
 
       // If the server responded with a transient 5xx, try the next endpoint.
@@ -294,13 +324,18 @@ async function extractFlyerInfoOnce(imageBase64, mediaType = 'image/jpeg', corre
   return data.extracted
 }
 
-async function extractFlyerInfo(imageBase64, mediaType = 'image/jpeg', correlationId = '') {
+async function extractFlyerInfo(
+  imageBase64,
+  mediaType = 'image/jpeg',
+  correlationId = '',
+  options = {},
+) {
   const maxAttempts = 4
   let lastErr
   for (let i = 0; i < maxAttempts; i++) {
     try {
       if (i > 0) await new Promise((r) => setTimeout(r, 750 * i))
-      return await extractFlyerInfoOnce(imageBase64, mediaType, correlationId)
+      return await extractFlyerInfoOnce(imageBase64, mediaType, correlationId, options)
     } catch (e) {
       lastErr = e
       const msg = e?.message || ''
@@ -494,15 +529,34 @@ export default function PostEventForm({ onClose, onPosted }) {
       setPhoto(ready)
       setPhotoPreview(URL.createObjectURL(ready))
 
-      // Convert to base64
       const mediaType = ready.type || 'image/jpeg'
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(ready)
-      })
-      const info = await extractFlyerInfo(base64, mediaType, flyerCorrelationId)
+      // Signed-in: upload to storage first, then call extract with a small JSON body. Large base64
+      // POSTs often fail in Android WebView; server fetches the public image URL instead.
+      let info = null
+      if (user?.id) {
+        try {
+          const publicUrl = await withNetworkRetries(
+            () =>
+              uploadFlyerImportImage(ready, user.id, {
+                correlationId: flyerCorrelationId,
+                skipCompress: true,
+              }),
+            5,
+          )
+          info = await extractFlyerInfo('', mediaType, flyerCorrelationId, { imageUrl: publicUrl })
+        } catch (e) {
+          console.warn('meetmap: flyer upload-then-extract failed, falling back to inline image', e)
+        }
+      }
+      if (!info) {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result.split(',')[1])
+          reader.onerror = reject
+          reader.readAsDataURL(ready)
+        })
+        info = await extractFlyerInfo(base64, mediaType, flyerCorrelationId)
+      }
       // Fill in the form with extracted info
       const bestAddress = info.verified_address || info.address || ''
       const geocodeQuery = buildGeocodeQuery(bestAddress, info.city)
