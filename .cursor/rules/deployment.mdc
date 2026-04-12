@@ -1,0 +1,26 @@
+---
+description: Always verify CI, push if needed, and deploy production to Vercel when meetmap work is finished
+alwaysApply: true
+---
+
+# Deployment (Vercel) — required on task completion
+
+For **`C:\Users\areil\Desktop\meetmap`**, when a feature or fix is **finished** (or the user implies ship / done / live), the agent **must** complete the workflow below **before ending the task**, unless the user said **not** to deploy or there is a hard blocker.
+
+**Skip deploy only if:** secrets are missing, tests/CI would knowingly fail, the user asked not to deploy, or Vercel CLI cannot run (then report what is missing).
+
+## Workflow
+
+1. **Verify (match GitHub CI):** from repo root, run `npm run format:check`, `npm run lint`, `npm run typecheck`, and `npm run build`. If `format:check` fails, run `npx prettier --write` on reported paths and re-check.
+2. **Git:** if there are meaningful uncommitted changes in tracked source (e.g. `src/`, `api/`, config), **commit** with a clear message and **`git push origin main`** (or the branch the user uses for production).
+3. **Production deploy:** `npx vercel deploy --prod --yes` from the same repo root (linked project required).
+
+If the CLI is missing, login fails, or the project is not linked, state that explicitly; do not claim deploy succeeded.
+
+## When the user only asked for preview
+
+Use `vercel deploy` (no `--prod`) if they asked for a **preview** only.
+
+## meetmap-desktop
+
+This rule targets **meetmap** (findcarmeets / Vercel). The sibling **meetmap-desktop** repo is separate: deploy or push there only when work was done in that project.
