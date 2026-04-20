@@ -12,6 +12,8 @@ const defaultPlayUrl = 'https://play.google.com/store/apps/details?id=com.meetma
 /** Hide promo inside the installed Capacitor shell (Play Store / native app). */
 function isNativeAppShell() {
   try {
+    const p = Capacitor.getPlatform()
+    if (p === 'android' || p === 'ios') return true
     return Capacitor.isNativePlatform()
   } catch {
     return false
@@ -68,10 +70,29 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
   const placement = isDesktopLayout ? 'top' : 'bottom'
 
   useEffect(() => {
-    if (isNativeAppShell()) return
-    const until = readSnoozeUntil()
-    if (Date.now() < until) return
-    setVisible(true)
+    let cancelled = false
+    let timeoutId = 0
+    const decide = () => {
+      if (cancelled) return
+      if (isNativeAppShell()) {
+        setVisible(false)
+        return
+      }
+      const until = readSnoozeUntil()
+      if (Date.now() < until) return
+      setVisible(true)
+    }
+    // Defer: on Android the Capacitor bridge sometimes reports "web" for one frame; without this,
+    // the Play promo portals above the app (z-index) and steals all taps including "Alerts".
+    const raf = requestAnimationFrame(() => {
+      decide()
+      timeoutId = window.setTimeout(decide, 300)
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
   }, [])
 
   useEffect(() => {
@@ -109,6 +130,8 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
   }
 
   if (!visible || typeof document === 'undefined') return null
+
+  const portalRoot = document.getElementById('root') || document.body
 
   const border = isLight ? '#E5E5E5' : '#2A2A2A'
   const bg = isLight ? '#FFFFFF' : '#141414'
@@ -160,7 +183,7 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
           right: 0,
           top: 'env(safe-area-inset-top, 0px)',
           bottom: 'auto',
-          zIndex: 99999,
+          zIndex: 180,
           padding: '10px 16px',
           paddingLeft: 'max(16px, env(safe-area-inset-left, 0px))',
           paddingRight: 'max(16px, env(safe-area-inset-right, 0px))',
@@ -174,7 +197,7 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
           right: 0,
           bottom,
           top: 'auto',
-          zIndex: 99999,
+          zIndex: 180,
           padding: '12px 14px 12px',
           paddingLeft: 'max(14px, env(safe-area-inset-left, 0px))',
           paddingRight: 'max(14px, env(safe-area-inset-right, 0px))',
@@ -322,5 +345,5 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
     </div>
   )
 
-  return createPortal(shell, document.body)
+  return createPortal(shell, portalRoot)
 }

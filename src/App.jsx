@@ -40,6 +40,7 @@ import PlayStoreBanner from './components/PlayStoreBanner'
 import { apiUrl } from './lib/apiOrigin'
 import { geocodeAddress } from './lib/geocode'
 import { makeClientUuid } from './lib/clientUuid'
+import { appAlert } from './lib/appAlert'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -51,10 +52,17 @@ const IMPORT_ADMIN_EMAILS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_EMAILS
   v.toLowerCase(),
 )
 const IMPORT_ADMIN_USER_IDS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_USER_IDS)
-const NATIVE_PUSH_ENABLED =
+// Push feature flag from env only. Do NOT call isNativeAndroidPushSupported() here — at module load the
+// Capacitor bridge often is not ready yet, so that returns false and the Alerts button stays disabled forever on Android.
+// Opt out: VITE_DISABLE_NATIVE_PUSH=true or VITE_ENABLE_NATIVE_PUSH=false
+const nativePushExplicitlyOff =
+  String(import.meta.env.VITE_DISABLE_NATIVE_PUSH || '')
+    .trim()
+    .toLowerCase() === 'true' ||
   String(import.meta.env.VITE_ENABLE_NATIVE_PUSH || '')
     .trim()
-    .toLowerCase() === 'true'
+    .toLowerCase() === 'false'
+const NATIVE_PUSH_ENABLED = !nativePushExplicitlyOff
 const REMINDER_WINDOWS = [
   { id: '24h', leadMs: 24 * 60 * 60 * 1000, windowMs: 60 * 60 * 1000 },
   { id: '2h', leadMs: 2 * 60 * 60 * 1000, windowMs: 20 * 60 * 1000 },
@@ -240,6 +248,16 @@ function AppInner() {
   const handlePlayStoreBannerVisibility = useCallback((open, meta) => {
     setPlayStorePromoOpen(Boolean(open && meta?.placement !== 'top'))
   }, [])
+
+  // Allow map overlay button to open the Post modal without prop drilling.
+  useEffect(() => {
+    const onOpen = () => {
+      if (user) setShowPost(true)
+      else setShowAuth(true)
+    }
+    window.addEventListener('meetmap:open-post', onOpen)
+    return () => window.removeEventListener('meetmap:open-post', onOpen)
+  }, [user])
 
   // Prevent triggering Supabase queries on every keystroke.
   useEffect(() => {
@@ -438,6 +456,9 @@ function AppInner() {
     if (isNativeAndroidPushSupported()) {
       if (!NATIVE_PUSH_ENABLED) {
         setNotificationPermission('denied')
+        await appAlert(
+          'Alerts are disabled in this build. Remove VITE_ENABLE_NATIVE_PUSH=false or VITE_DISABLE_NATIVE_PUSH from .env, then run npm run cap:sync and reinstall the app.',
+        )
         return
       }
       try {
@@ -447,6 +468,9 @@ function AppInner() {
           },
           onRegistrationError: (error) => {
             console.error('Native push registration failed:', error)
+            void appAlert(
+              'Firebase could not register this device for push. Use an Android emulator image with Google Play (not “Google APIs” only), or a physical device. Also confirm google-services.json matches the app id.',
+            )
           },
         })
         setNotificationPermission(result?.enabled ? 'granted' : 'denied')
@@ -455,15 +479,47 @@ function AppInner() {
             reminders_enabled: true,
             event_updates_enabled: true,
           })
+        } else if (!result?.enabled) {
+          const r = result?.reason
+          if (r === 'permission-denied') {
+            await appAlert(
+              'Notifications are off for Meet Map. Turn them on in Android Settings → Apps → Meet Map → Notifications.',
+            )
+          } else if (r === 'register-failed') {
+            await appAlert(
+              'Could not register for alerts (Firebase/FCM). Use a Play-enabled emulator or device, and verify google-services.json in android/app/.',
+            )
+          } else if (r === 'timed-out') {
+            await appAlert(
+              result?.message ||
+                'Push setup timed out. Use an emulator with Google Play, sign in to Google, and try again.',
+            )
+          } else if (r === 'not-native-android') {
+            await appAlert(
+              'Meet Map does not detect the native Android shell. Reinstall from Android Studio or use the Play build — not the website tab in a browser.',
+            )
+          } else {
+            await appAlert(
+              'Could not enable alerts. If you are on an emulator, create an AVD that includes the Play Store / Google Play.',
+            )
+          }
         }
       } catch (e) {
         setNotificationPermission('denied')
         console.error('Native push permission request failed:', e)
+        await appAlert(
+          `Could not enable alerts: ${e?.message || String(e)}. Try again or update the app.`,
+        )
       }
       return
     }
 
-    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      await appAlert(
+        'This browser does not support notifications. Open Meet Map in the Android app for alerts.',
+      )
+      return
+    }
     try {
       const permission = await requestWebNotificationPermission()
       setNotificationPermission(permission)
@@ -537,6 +593,13 @@ function AppInner() {
   const upcomingCount = eventsForCurrentView.filter(
     (e) => e.date >= new Date().toISOString().split('T')[0],
   ).length
+
+  const searchScopeLabel = (() => {
+    if (nearMeOnly) return 'Near you'
+    const q = String(searchQuery || '').trim()
+    if (q) return `Near ${q}`
+    return 'All upcoming events'
+  })()
 
   useEffect(() => {
     if (isNativeAndroidPushSupported()) return
@@ -1106,7 +1169,7 @@ function AppInner() {
           padding: 'calc(env(safe-area-inset-top) + 14px) 18px 10px',
           position: 'sticky',
           top: 0,
-          zIndex: 100,
+          zIndex: 400,
         }}
       >
         <div
@@ -1132,6 +1195,10 @@ function AppInner() {
                 color: '#444',
                 letterSpacing: 1,
                 marginTop: -1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
               }}
             >
               <span
@@ -1146,6 +1213,24 @@ function AppInner() {
                 }}
               />
               {upcomingCount} UPCOMING EVENTS
+              <span
+                style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: 0.6,
+                  color: filterChipText,
+                  background: filterChipBg,
+                  border: `1px solid ${filterChipBorder}`,
+                  borderRadius: 999,
+                  padding: '2px 8px',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                }}
+                title="Current search scope"
+              >
+                {searchScopeLabel}
+              </span>
             </div>
           </div>
 
@@ -1215,8 +1300,8 @@ function AppInner() {
               {isLight ? 'LIGHT' : 'DARK'}
             </button>
             <button
-              onClick={nativePushTemporarilyDisabled ? undefined : handleEnableNotifications}
-              disabled={nativePushTemporarilyDisabled}
+              type="button"
+              onClick={handleEnableNotifications}
               style={{
                 background: 'none',
                 border: `1px solid ${notificationPermission === 'granted' ? '#FF6B35' : isLight ? '#E5E5E5' : '#222'}`,
@@ -1225,13 +1310,13 @@ function AppInner() {
                 color: notificationPermission === 'granted' ? '#FF8A5C' : isLight ? '#444' : '#555',
                 fontFamily: "'DM Sans', sans-serif",
                 fontSize: 11,
-                cursor: nativePushTemporarilyDisabled ? 'default' : 'pointer',
-                opacity: nativePushTemporarilyDisabled ? 0.6 : 1,
+                cursor: 'pointer',
+                opacity: nativePushTemporarilyDisabled ? 0.65 : 1,
                 fontWeight: 700,
               }}
               title={
                 nativePushTemporarilyDisabled
-                  ? 'Alerts temporarily unavailable on Android build'
+                  ? 'Alerts unavailable in this build (env flag). Tap for details.'
                   : 'Enable reminders for saved events'
               }
             >
@@ -1487,6 +1572,7 @@ function AppInner() {
         <div className="fade-up">
           <MapView
             events={eventsForCurrentView}
+            loading={loading}
             onSelectEvent={(e) => {
               setMapSelected(e)
               setSelectedEvent(e)

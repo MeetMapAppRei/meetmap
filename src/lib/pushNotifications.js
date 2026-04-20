@@ -3,6 +3,15 @@ import { PushNotifications } from '@capacitor/push-notifications'
 
 const isNativeAndroid = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
 
+const PUSH_STEP_TIMEOUT_MS = 25000
+
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ])
+}
+
 export const isNativeAndroidPushSupported = () => isNativeAndroid()
 
 export const getWebNotificationPermission = () => {
@@ -55,17 +64,39 @@ export const initializeNativePush = async ({
     if (typeof onNotificationTap === 'function') onNotificationTap(action)
   })
 
-  const request = await PushNotifications.requestPermissions()
+  let request
+  try {
+    request = await withTimeout(
+      PushNotifications.requestPermissions(),
+      PUSH_STEP_TIMEOUT_MS,
+      'Timed out waiting for notification permission.',
+    )
+  } catch (e) {
+    if (typeof onRegistrationError === 'function') onRegistrationError(e)
+    const msg = e?.message || String(e)
+    if (/timed out/i.test(msg)) {
+      return { enabled: false, reason: 'timed-out', message: msg }
+    }
+    return { enabled: false, reason: 'permission-denied' }
+  }
   const receive = request?.receive || 'denied'
   if (receive !== 'granted') {
     return { enabled: false, reason: 'permission-denied' }
   }
 
   try {
-    await PushNotifications.register()
+    await withTimeout(
+      PushNotifications.register(),
+      PUSH_STEP_TIMEOUT_MS,
+      'Timed out registering for push (check Google Play services / Firebase on this device).',
+    )
     return { enabled: true }
   } catch (e) {
     if (typeof onRegistrationError === 'function') onRegistrationError(e)
+    const msg = e?.message || String(e)
+    if (/timed out/i.test(msg)) {
+      return { enabled: false, reason: 'timed-out', message: msg }
+    }
     return { enabled: false, reason: 'register-failed' }
   }
 }
