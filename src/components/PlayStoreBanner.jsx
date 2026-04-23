@@ -78,6 +78,12 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
         setVisible(false)
         return
       }
+      // Desktop promo should be reliably present; on mobile, allow a snooze so it doesn't
+      // cover the bottom nav repeatedly.
+      if (isDesktopLayout) {
+        setVisible(true)
+        return
+      }
       const until = readSnoozeUntil()
       if (Date.now() < until) return
       setVisible(true)
@@ -93,7 +99,7 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
       cancelAnimationFrame(raf)
       if (timeoutId) window.clearTimeout(timeoutId)
     }
-  }, [])
+  }, [isDesktopLayout])
 
   useEffect(() => {
     onVisibilityChange?.(visible, { placement })
