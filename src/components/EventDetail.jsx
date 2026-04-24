@@ -4,10 +4,14 @@ import {
   postComment,
   getEventRsvpStatus,
   setEventRsvp,
+  toggleAttendance,
+  getAttendanceStatus,
+  fetchEventAttendeeCount,
   updateEvent,
   uploadEventPhoto,
   supabase,
   createEventUpdate,
+  fetchEventUpdates,
 } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useTheme } from '../lib/ThemeContext'
@@ -34,6 +38,27 @@ const STATUS_META = {
 const getDirectionsUrl = (event) => {
   const query = (event?.address || `${event?.location || ''}, ${event?.city || ''}`).trim()
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
+
+const formatRelativeTime = (value) => {
+  const ms = value ? new Date(value).getTime() : NaN
+  if (!Number.isFinite(ms)) return ''
+  const diffSec = Math.round((ms - Date.now()) / 1000)
+  const abs = Math.abs(diffSec)
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  if (abs < 60) return rtf.format(diffSec, 'second')
+  const diffMin = Math.round(diffSec / 60)
+  if (Math.abs(diffMin) < 60) return rtf.format(diffMin, 'minute')
+  const diffHr = Math.round(diffMin / 60)
+  if (Math.abs(diffHr) < 24) return rtf.format(diffHr, 'hour')
+  const diffDay = Math.round(diffHr / 24)
+  if (Math.abs(diffDay) < 7) return rtf.format(diffDay, 'day')
+  const diffWeek = Math.round(diffDay / 7)
+  if (Math.abs(diffWeek) < 5) return rtf.format(diffWeek, 'week')
+  const diffMonth = Math.round(diffDay / 30)
+  if (Math.abs(diffMonth) < 12) return rtf.format(diffMonth, 'month')
+  const diffYear = Math.round(diffDay / 365)
+  return rtf.format(diffYear, 'year')
 }
 
 const S = {
@@ -131,8 +156,14 @@ function EditForm({ event, onSaved, onCancel }) {
   }
 
   const handleSave = async () => {
-    if (!form.title || !form.date || !form.city) {
-      setError('Please fill in all required fields.')
+    const required = [
+      { key: 'title', label: 'Event Name' },
+      { key: 'date', label: 'Date' },
+      { key: 'city', label: 'City, State' },
+    ]
+    const missing = required.filter((f) => !String(form[f.key] || '').trim())
+    if (missing.length > 0) {
+      setError(`Please complete: ${missing.map((m) => m.label).join(', ')}.`)
       return
     }
     setError('')
@@ -459,19 +490,23 @@ export default function EventDetail({
   const [event, setEvent] = useState(initialEvent)
   const [comments, setComments] = useState([])
   const [commentText, setCommentText] = useState('')
+  const [showAllComments, setShowAllComments] = useState(false)
   const [rsvpStatus, setRsvpStatus] = useState(null)
   const [interestedCount, setInterestedCount] = useState(initialEvent.interested_count || 0)
-  const [goingCount, setGoingCount] = useState(
-    initialEvent.going_count || initialEvent.attendee_count || 0,
-  )
+  const [goingCount, setGoingCount] = useState(initialEvent.attendee_count || 0)
+  const [isGoing, setIsGoing] = useState(false)
   const [posting, setPosting] = useState(false)
-  const [postingUpdate, setPostingUpdate] = useState(false)
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [updates, setUpdates] = useState([])
+  const [updatesLoaded, setUpdatesLoaded] = useState(false)
+  const [showUpdateComposer, setShowUpdateComposer] = useState(false)
   const [updateMessage, setUpdateMessage] = useState('')
   const [updateError, setUpdateError] = useState('')
+  const [postingUpdate, setPostingUpdate] = useState(false)
+  const [toast, setToast] = useState('')
   const [showReport, setShowReport] = useState(false)
   const bottomRef = useRef()
 
@@ -490,32 +525,92 @@ export default function EventDetail({
     fetchComments(event.id).then(setComments).catch(console.error)
     if (user) {
       getEventRsvpStatus(event.id, user.id).then(setRsvpStatus)
+      getAttendanceStatus(event.id, user.id)
+        .then(setIsGoing)
+        .catch(() => setIsGoing(false))
     }
+    fetchEventAttendeeCount(event.id)
+      .then(setGoingCount)
+      .catch(() => {})
   }, [event.id, user])
 
-  const handleSetRsvp = async (nextStatus) => {
+  useEffect(() => {
+    let cancelled = false
+    setUpdatesLoaded(false)
+    fetchEventUpdates(event.id)
+      .then((rows) => {
+        if (cancelled) return
+        setUpdates(Array.isArray(rows) ? rows : [])
+        setUpdatesLoaded(true)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        console.warn('Failed to load event updates:', e)
+        setUpdates([])
+        setUpdatesLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [event.id])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(''), 2200)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const handleToggleGoing = async () => {
     if (!user) return onAuthNeeded()
-    const current = rsvpStatus
-    const desired = current === nextStatus ? null : nextStatus
-    await setEventRsvp(event.id, user.id, desired)
-    setRsvpStatus(desired)
-    if (current === 'going') setGoingCount((prev) => Math.max(0, prev - 1))
-    if (current === 'interested') setInterestedCount((prev) => Math.max(0, prev - 1))
-    if (desired === 'going') setGoingCount((prev) => prev + 1)
-    if (desired === 'interested') setInterestedCount((prev) => prev + 1)
+    try {
+      const next = await toggleAttendance(event.id, user.id)
+      setIsGoing(next)
+      const nextCount = await fetchEventAttendeeCount(event.id).catch(() => null)
+      if (typeof nextCount === 'number') setGoingCount(nextCount)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleSetInterested = async () => {
+    if (!user) return onAuthNeeded()
+    const current = rsvpStatus === 'interested'
+    const desired = current ? null : 'interested'
+    try {
+      await setEventRsvp(event.id, user.id, desired)
+      setRsvpStatus(desired)
+      setInterestedCount((prev) => (current ? Math.max(0, prev - 1) : prev + 1))
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   const handleComment = async () => {
     if (!user) return onAuthNeeded()
-    if (!commentText.trim()) return
+    const text = commentText.trim()
+    if (!text) return
     setPosting(true)
+    const optimisticId = `optimistic-${makeClientUuid()}`
+    const optimistic = {
+      id: optimisticId,
+      event_id: event.id,
+      user_id: user.id,
+      text,
+      created_at: new Date().toISOString(),
+      profiles: {
+        username: user?.user_metadata?.username || user?.email || 'You',
+        avatar_url: null,
+      },
+    }
+    setComments((prev) => [...prev, optimistic])
+    setCommentText('')
     try {
-      const comment = await postComment(event.id, user.id, commentText.trim())
-      setComments((prev) => [...prev, comment])
-      setCommentText('')
+      const comment = await postComment(event.id, user.id, text)
+      setComments((prev) => prev.map((c) => (c.id === optimisticId ? comment : c)))
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
     } catch (e) {
       console.error(e)
+      setComments((prev) => prev.filter((c) => c.id !== optimisticId))
     } finally {
       setPosting(false)
     }
@@ -577,6 +672,7 @@ export default function EventDetail({
     setUpdateError('')
     try {
       const row = await createEventUpdate(event.id, user.id, message)
+      setUpdates((prev) => [row, ...(Array.isArray(prev) ? prev : [])])
       const updatedEvent = {
         ...event,
         latest_update_id: row.id,
@@ -586,6 +682,8 @@ export default function EventDetail({
       setEvent(updatedEvent)
       onUpdated?.(updatedEvent)
       setUpdateMessage('')
+      setShowUpdateComposer(false)
+      setToast('Update posted')
     } catch (e) {
       setUpdateError(e.message || 'Failed to post update')
     } finally {
@@ -894,39 +992,115 @@ export default function EventDetail({
               {event.description}
             </p>
           )}
-          {event.latest_update_message && (
-            <div
-              style={{
-                marginBottom: 14,
-                border: `1px solid ${isLight ? '#F0C3B3' : '#3A241C'}`,
-                background: isLight ? '#FFF3ED' : '#1A110D',
-                borderRadius: 8,
-                padding: '8px 10px',
-              }}
-            >
+
+          {/* Lightweight comment prompt */}
+          <div style={{ marginBottom: 14 }}>
+            {user ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  placeholder="Leave a note for other attendees…"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleComment()}
+                  style={{
+                    flex: 1,
+                    background: inputBg,
+                    border: `1px solid ${inputBorder}`,
+                    borderRadius: 10,
+                    padding: '12px 13px',
+                    color: isLight ? '#222' : '#F0F0F0',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  onClick={handleComment}
+                  disabled={posting || !commentText.trim()}
+                  style={{
+                    background: posting || !commentText.trim() ? shareBg : color,
+                    color: posting || !commentText.trim() ? shareText : '#0A0A0A',
+                    border: `1px solid ${posting || !commentText.trim() ? shareBorder : color}`,
+                    borderRadius: 10,
+                    padding: '0 16px',
+                    fontFamily: "'Bebas Neue', sans-serif",
+                    fontSize: 16,
+                    cursor: posting || !commentText.trim() ? 'default' : 'pointer',
+                    letterSpacing: 1.2,
+                  }}
+                >
+                  {posting ? '...' : 'SEND'}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <button
+                  onClick={onAuthNeeded}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: 13,
+                    color: isLight ? '#D1491A' : '#FF8A5C',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  Sign in to comment
+                </button>
+              </div>
+            )}
+          </div>
+
+          {updatesLoaded && updates.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
               <div
                 style={{
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: 11,
-                  color: isLight ? '#D1491A' : '#FF8A5C',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.4,
-                  marginBottom: 4,
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 18,
+                  letterSpacing: 2,
+                  color: '#555',
+                  marginBottom: 10,
                 }}
               >
-                Host update
+                UPDATES
               </div>
-              <div
-                style={{
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: 13,
-                  color: isLight ? '#444' : '#D8D8D8',
-                  lineHeight: 1.5,
-                }}
-              >
-                {event.latest_update_message}
-              </div>
+              {updates.map((u) => (
+                <div
+                  key={u.id}
+                  style={{
+                    border: `1px solid ${isLight ? '#E5E5E5' : '#1A1A1A'}`,
+                    background: isLight ? '#FFFFFF' : '#101010',
+                    borderRadius: 10,
+                    padding: '10px 12px',
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: 13,
+                      color: isLight ? '#444' : '#D8D8D8',
+                      lineHeight: 1.45,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {u.message}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: 11,
+                      color: muted,
+                      marginTop: 6,
+                    }}
+                  >
+                    {formatRelativeTime(u.created_at)}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -961,11 +1135,11 @@ export default function EventDetail({
             {!isPast && (
               <>
                 <button
-                  onClick={() => handleSetRsvp('going')}
+                  onClick={handleToggleGoing}
                   style={{
                     flex: 1.4,
-                    background: rsvpStatus === 'going' ? 'transparent' : color,
-                    color: rsvpStatus === 'going' ? color : '#0A0A0A',
+                    background: color,
+                    color: '#0A0A0A',
                     border: `1px solid ${color}`,
                     borderRadius: 10,
                     padding: '12px',
@@ -975,10 +1149,10 @@ export default function EventDetail({
                     cursor: 'pointer',
                   }}
                 >
-                  {rsvpStatus === 'going' ? `✓ GOING · ${goingCount}` : `GOING · ${goingCount}`}
+                  {isGoing ? `✓ You're going · ${goingCount} going` : `GOING · ${goingCount} going`}
                 </button>
                 <button
-                  onClick={() => handleSetRsvp('interested')}
+                  onClick={handleSetInterested}
                   style={{
                     flex: 1.2,
                     background: rsvpStatus === 'interested' ? '#261D08' : shareBg,
@@ -1057,55 +1231,27 @@ export default function EventDetail({
           {/* Owner controls: Edit + Delete */}
           {isOwner && (
             <div style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input
-                  value={updateMessage}
-                  onChange={(e) => setUpdateMessage(e.target.value)}
-                  placeholder="Post update for saved attendees..."
-                  maxLength={220}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => {
+                    setUpdateError('')
+                    setShowUpdateComposer(true)
+                  }}
                   style={{
                     flex: 1,
-                    background: inputBg,
-                    border: `1px solid ${inputBorder}`,
-                    borderRadius: 8,
-                    padding: '8px 10px',
-                    color: isLight ? '#222' : '#F0F0F0',
-                    fontFamily: "'DM Sans', sans-serif",
-                    fontSize: 12,
-                    outline: 'none',
-                  }}
-                />
-                <button
-                  onClick={handlePostUpdate}
-                  disabled={postingUpdate || !updateMessage.trim()}
-                  style={{
-                    background: postingUpdate || !updateMessage.trim() ? '#333' : '#FF6B35',
-                    color: postingUpdate || !updateMessage.trim() ? '#666' : '#0A0A0A',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '0 12px',
+                    background: isLight ? '#FFF3ED' : '#1A110D',
+                    color: isLight ? '#D1491A' : '#FF8A5C',
+                    border: `1px solid ${isLight ? '#F0C3B3' : '#3A241C'}`,
+                    borderRadius: 10,
+                    padding: '10px',
                     fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 14,
-                    letterSpacing: 0.8,
-                    cursor: postingUpdate || !updateMessage.trim() ? 'default' : 'pointer',
+                    fontSize: 15,
+                    letterSpacing: 1,
+                    cursor: 'pointer',
                   }}
                 >
-                  {postingUpdate ? 'POSTING...' : 'POST UPDATE'}
+                  📣 POST UPDATE
                 </button>
-              </div>
-              {updateError && (
-                <div
-                  style={{
-                    fontFamily: "'DM Sans', sans-serif",
-                    fontSize: 12,
-                    color: '#FF7A7A',
-                    marginBottom: 8,
-                  }}
-                >
-                  {updateError}
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 10 }}>
                 <button
                   onClick={() => setEditing(true)}
                   style={{
@@ -1219,106 +1365,77 @@ export default function EventDetail({
             COMMENTS {comments.length > 0 && <span style={{ color }}>{comments.length}</span>}
           </div>
 
-          {comments.length === 0 && (
-            <div
-              style={{
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: 13,
-                color: isLight ? '#666' : '#333',
-                textAlign: 'center',
-                padding: '20px 0',
-              }}
-            >
-              No comments yet. Be the first! 👇
-            </div>
-          )}
-
-          {comments.map((c) => (
-            <div key={c.id} style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          {(showAllComments ? comments : comments.slice(Math.max(0, comments.length - 3))).map(
+            (c) => (
+              <div key={c.id} style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: '50%',
+                      background: color + '33',
+                      border: `1px solid ${color}44`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontFamily: "'Bebas Neue', sans-serif",
+                      fontSize: 14,
+                      color,
+                    }}
+                  >
+                    {(c.profiles?.username || 'U')[0].toUpperCase()}
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#aaa',
+                    }}
+                  >
+                    {c.profiles?.username || 'Anonymous'}
+                  </span>
+                  <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: muted }}>
+                    {formatRelativeTime(c.created_at)}
+                  </span>
+                </div>
                 <div
                   style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: '50%',
-                    background: color + '33',
-                    border: `1px solid ${color}44`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 14,
-                    color,
-                  }}
-                >
-                  {(c.profiles?.username || 'U')[0].toUpperCase()}
-                </div>
-                <span
-                  style={{
                     fontFamily: "'DM Sans', sans-serif",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: '#aaa',
+                    fontSize: 13,
+                    color: commentsText,
+                    paddingLeft: 36,
+                    lineHeight: 1.5,
                   }}
                 >
-                  {c.profiles?.username || 'Anonymous'}
-                </span>
-                <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: '#333' }}>
-                  {new Date(c.created_at).toLocaleDateString()}
-                </span>
+                  {c.text}
+                </div>
               </div>
-              <div
-                style={{
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: 13,
-                  color: commentsText,
-                  paddingLeft: 36,
-                  lineHeight: 1.5,
-                }}
-              >
-                {c.text}
-              </div>
-            </div>
-          ))}
+            ),
+          )}
           <div ref={bottomRef} />
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <input
-              placeholder={user ? 'Add a comment...' : 'Log in to comment'}
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleComment()}
-              disabled={!user}
-              style={{
-                flex: 1,
-                background: inputBg,
-                border: `1px solid ${inputBorder}`,
-                borderRadius: 8,
-                padding: '10px 13px',
-                color: isLight ? '#222' : '#F0F0F0',
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: 13,
-                outline: 'none',
-              }}
-            />
+          {!showAllComments && comments.length >= 3 && (
             <button
-              onClick={user ? handleComment : onAuthNeeded}
-              disabled={posting}
+              onClick={() => setShowAllComments(true)}
               style={{
-                background: color,
-                color: isLight ? '#0A0A0A' : '#0A0A0A',
-                border: 'none',
-                borderRadius: 8,
-                padding: '0 16px',
-                fontFamily: "'Bebas Neue', sans-serif",
+                width: '100%',
+                marginTop: 12,
+                background: 'transparent',
+                border: `1px solid ${shareBorder}`,
+                borderRadius: 10,
+                padding: '10px 12px',
+                fontFamily: "'Bebas Neue'",
                 fontSize: 15,
+                letterSpacing: 1.1,
                 cursor: 'pointer',
-                letterSpacing: 1,
+                color: isLight ? '#444' : '#aaa',
               }}
             >
-              {posting ? '...' : 'POST'}
+              Show all {comments.length} comments
             </button>
-          </div>
+          )}
         </div>
       </div>
       {showReport && (
@@ -1328,6 +1445,166 @@ export default function EventDetail({
           onAuthNeeded={onAuthNeeded}
           onClose={() => setShowReport(false)}
         />
+      )}
+
+      {showUpdateComposer && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: overlayBg,
+            zIndex: 900,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 480,
+              background: panelBg,
+              borderRadius: '20px 20px 0 0',
+              border: `1px solid ${panelBorder}`,
+              maxHeight: '86vh',
+              overflowY: 'auto',
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 22,
+                  letterSpacing: 2,
+                  color: '#FF6B35',
+                }}
+              >
+                POST UPDATE
+              </div>
+              <button
+                onClick={() => {
+                  setShowUpdateComposer(false)
+                  setUpdateError('')
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: muted,
+                  fontSize: 26,
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: muted }}>
+                Max 280 characters
+              </div>
+              <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: muted }}>
+                {280 - String(updateMessage || '').length}
+              </div>
+            </div>
+
+            <textarea
+              value={updateMessage}
+              onChange={(e) => setUpdateMessage(e.target.value.slice(0, 280))}
+              rows={4}
+              placeholder="Type an update for attendees..."
+              style={{
+                ...S.input,
+                background: inputBg,
+                border: `1px solid ${inputBorder}`,
+                color: isLight ? '#222' : '#F0F0F0',
+                resize: 'none',
+              }}
+            />
+
+            {updateError && (
+              <div
+                style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 12,
+                  color: '#FF7A7A',
+                  marginBottom: 12,
+                }}
+              >
+                {updateError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => {
+                  setShowUpdateComposer(false)
+                  setUpdateError('')
+                }}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  color: muted,
+                  border: `1px solid ${inputBorder}`,
+                  borderRadius: 10,
+                  padding: 12,
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 16,
+                  letterSpacing: 1.2,
+                  cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handlePostUpdate}
+                disabled={postingUpdate || !updateMessage.trim()}
+                style={{
+                  flex: 2,
+                  background: postingUpdate || !updateMessage.trim() ? '#333' : '#FF6B35',
+                  color: postingUpdate || !updateMessage.trim() ? '#666' : '#0A0A0A',
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: 12,
+                  fontFamily: "'Bebas Neue', sans-serif",
+                  fontSize: 16,
+                  letterSpacing: 1.4,
+                  cursor: postingUpdate || !updateMessage.trim() ? 'default' : 'pointer',
+                }}
+              >
+                {postingUpdate ? 'POSTING...' : 'POST'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 'calc(env(safe-area-inset-bottom) + 22px)',
+            transform: 'translateX(-50%)',
+            zIndex: 1200,
+            background: isLight ? '#111' : '#F2F2F2',
+            color: isLight ? '#fff' : '#111',
+            borderRadius: 999,
+            padding: '10px 14px',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: 12,
+            border: `1px solid ${isLight ? '#222' : '#E5E5E5'}`,
+          }}
+        >
+          {toast}
+        </div>
       )}
     </div>
   )

@@ -24,6 +24,8 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
   const today = new Date().toISOString().split('T')[0]
   const isToday = event.date === today
   const isPast = event.date < today
+  const posterUsername = event?.profiles?.username
+  const posterAvatarUrl = event?.profiles?.avatar_url
   const goingCount =
     event.going_count || event.event_attendees?.[0]?.count || event.attendee_count || 0
   const interestedCount = event.interested_count || 0
@@ -194,12 +196,61 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
             fontFamily: "'Bebas Neue', sans-serif",
             fontSize: 21,
             letterSpacing: 1,
-            marginBottom: 4,
+            marginBottom: posterUsername ? 2 : 4,
             lineHeight: 1.1,
           }}
         >
           {event.title}
         </div>
+
+        {posterUsername && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              color: isLight ? '#777' : '#888',
+              marginBottom: 4,
+            }}
+          >
+            {posterAvatarUrl ? (
+              <img
+                src={posterAvatarUrl}
+                alt={posterUsername}
+                loading="lazy"
+                decoding="async"
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 999,
+                  objectFit: 'cover',
+                  flex: '0 0 auto',
+                }}
+              />
+            ) : (
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 999,
+                  background: isLight ? '#E5E5E5' : '#2A2A2A',
+                  color: isLight ? '#555' : '#AAA',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textTransform: 'uppercase',
+                  flex: '0 0 auto',
+                }}
+              >
+                {String(posterUsername).trim().slice(0, 1)}
+              </div>
+            )}
+            <span>by {posterUsername}</span>
+          </div>
+        )}
 
         <div
           style={{

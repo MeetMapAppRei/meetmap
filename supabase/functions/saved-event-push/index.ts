@@ -14,10 +14,14 @@ type NotifyRequest = {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-const FCM_SERVER_KEY = Deno.env.get('FCM_SERVER_KEY') || ''
 const INTERNAL_BEARER = Deno.env.get('SAVED_EVENT_PUSH_BEARER') || ''
 const APP_DEEPLINK_BASE = Deno.env.get('APP_DEEPLINK_BASE') || 'meetmap://event/'
 const APP_WEB_BASE = Deno.env.get('APP_WEB_BASE') || 'https://www.findcarmeets.com/?event='
+
+// FCM HTTP v1 auth (service account)
+const FCM_PROJECT_ID = Deno.env.get('FCM_PROJECT_ID') || ''
+const FCM_CLIENT_EMAIL = Deno.env.get('FCM_CLIENT_EMAIL') || ''
+const FCM_PRIVATE_KEY = (Deno.env.get('FCM_PRIVATE_KEY') || '').replace(/\\n/g, '\n')
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -31,27 +35,96 @@ const json = (status: number, payload: Record<string, unknown>) =>
 
 const norm = (v: unknown) => String(v || '').trim()
 
-async function sendFcmLegacy(token: string, title: string, body: string, eventId: string) {
-  const res = await fetch('https://fcm.googleapis.com/fcm/send', {
+function b64url(bytes: Uint8Array) {
+  let s = ''
+  for (const b of bytes) s += String.fromCharCode(b)
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+async function signJwtRs256(payload: Record<string, unknown>) {
+  const header = { alg: 'RS256', typ: 'JWT' }
+  const enc = new TextEncoder()
+  const headerPart = b64url(enc.encode(JSON.stringify(header)))
+  const payloadPart = b64url(enc.encode(JSON.stringify(payload)))
+  const data = enc.encode(`${headerPart}.${payloadPart}`)
+
+  const pkcs8 = FCM_PRIVATE_KEY.replace('-----BEGIN PRIVATE KEY-----', '')
+    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/\s+/g, '')
+  const keyBytes = Uint8Array.from(atob(pkcs8), (c) => c.charCodeAt(0))
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    keyBytes.buffer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const sig = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, cryptoKey, data)
+  return `${headerPart}.${payloadPart}.${b64url(new Uint8Array(sig))}`
+}
+
+let cachedAccessToken = ''
+let cachedAccessTokenExpMs = 0
+
+async function getFcmAccessToken() {
+  const now = Date.now()
+  if (cachedAccessToken && cachedAccessTokenExpMs - now > 60_000) return cachedAccessToken
+  if (!FCM_CLIENT_EMAIL || !FCM_PRIVATE_KEY) throw new Error('Missing FCM service account env vars')
+
+  const iat = Math.floor(now / 1000)
+  const exp = iat + 60 * 55
+  const jwt = await signJwtRs256({
+    iss: FCM_CLIENT_EMAIL,
+    sub: FCM_CLIENT_EMAIL,
+    aud: 'https://oauth2.googleapis.com/token',
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    iat,
+    exp,
+  })
+
+  const body = new URLSearchParams()
+  body.set('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer')
+  body.set('assertion', jwt)
+
+  const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `key=${FCM_SERVER_KEY}`,
-    },
-    body: JSON.stringify({
-      to: token,
-      priority: 'high',
-      notification: {
-        title,
-        body,
-      },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || !json?.access_token) {
+    throw new Error(`Failed to get FCM access token (${res.status}) ${JSON.stringify(json)}`)
+  }
+  cachedAccessToken = String(json.access_token)
+  cachedAccessTokenExpMs = now + Number(json.expires_in || 3300) * 1000
+  return cachedAccessToken
+}
+
+async function sendFcmV1(token: string, title: string, body: string, eventId: string) {
+  const accessToken = await getFcmAccessToken()
+  const url = `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(FCM_PROJECT_ID)}/messages:send`
+  const messageBody = {
+    message: {
+      token,
+      notification: { title, body },
       data: {
         event_id: eventId,
         click_action: 'OPEN_EVENT',
         deep_link: `${APP_DEEPLINK_BASE}${eventId}`,
         web_link: `${APP_WEB_BASE}${eventId}`,
       },
-    }),
+      android: { priority: 'HIGH' },
+    },
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(messageBody),
   })
   const payload = await res.json().catch(() => ({}))
   return { ok: res.ok, status: res.status, payload }
@@ -149,12 +222,7 @@ async function notifySavedEventUpdate(req: NotifyRequest) {
       skipped += 1
       continue
     }
-    const response = await sendFcmLegacy(
-      r.token,
-      `New host update: ${eventTitle}`,
-      message,
-      eventId,
-    )
+    const response = await sendFcmV1(r.token, `New host update: ${eventTitle}`, message, eventId)
     if (!response.ok) {
       // Deactivate stale tokens when FCM reports invalid registration.
       const text = JSON.stringify(response.payload || {})
@@ -192,12 +260,7 @@ async function notifySavedEventStatus(req: NotifyRequest) {
       skipped += 1
       continue
     }
-    const response = await sendFcmLegacy(
-      r.token,
-      `Status changed: ${eventTitle}`,
-      statusLabel,
-      eventId,
-    )
+    const response = await sendFcmV1(r.token, `Status changed: ${eventTitle}`, statusLabel, eventId)
     if (!response.ok) continue
     await markSent(r.userId, eventId, 'event_status', dedupeKey)
     sent += 1
@@ -251,7 +314,7 @@ async function runReminderTick(req: NotifyRequest) {
           norm(event.address) ||
           `${norm(event.location)}${event.city ? `, ${event.city}` : ''}`.trim()
         const body = `${when}${place ? ` - ${place}` : ''}`
-        const response = await sendFcmLegacy(
+        const response = await sendFcmV1(
           r.token,
           `Upcoming saved event: ${event.title || 'Event'}`,
           body,
@@ -270,7 +333,9 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed' })
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY)
     return json(500, { error: 'Missing Supabase env vars' })
-  if (!FCM_SERVER_KEY) return json(500, { error: 'Missing FCM_SERVER_KEY' })
+  if (!FCM_PROJECT_ID) return json(500, { error: 'Missing FCM_PROJECT_ID' })
+  if (!FCM_CLIENT_EMAIL) return json(500, { error: 'Missing FCM_CLIENT_EMAIL' })
+  if (!FCM_PRIVATE_KEY) return json(500, { error: 'Missing FCM_PRIVATE_KEY' })
   if (INTERNAL_BEARER) {
     const auth = request.headers.get('Authorization') || ''
     if (auth !== `Bearer ${INTERNAL_BEARER}`) return json(401, { error: 'Unauthorized' })

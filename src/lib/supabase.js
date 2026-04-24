@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { compressImageForUpload, compressImageForUploadUnder } from './compressImageForUpload'
 import { apiUrl, apiUrlCandidates } from './apiOrigin'
 import { eventsLikelyDuplicatePair } from './eventDedupe'
+import { geocodeAddress } from './geocode'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
 // Important: fallback must be valid for your Supabase project.
@@ -237,6 +238,17 @@ export const fetchLatestEventUpdates = async (eventIds) => {
   return fetchLatestEventUpdateMap(eventIds)
 }
 
+export const fetchEventUpdates = async (eventId) => {
+  if (!eventId) return []
+  const { data, error } = await supabase
+    .from('event_updates')
+    .select('id, event_id, user_id, message, created_at')
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
 export const createEventUpdate = async (eventId, userId, message) => {
   if (!eventId || !userId || !String(message || '').trim())
     throw new Error('Missing event update data')
@@ -249,7 +261,7 @@ export const createEventUpdate = async (eventId, userId, message) => {
         message: String(message).trim(),
       },
     ])
-    .select('id, event_id, message, created_at')
+    .select('id, event_id, user_id, message, created_at')
     .single()
   if (error) throw error
   return data
@@ -266,9 +278,7 @@ export const fetchEvents = async (filters = {}) => {
     let query = supabase
       .from('events')
       // Explicitly include `address` so the UI can always display the full street address.
-      .select(
-        'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
-      )
+      .select('*, profiles(username, avatar_url), event_attendees(count)')
       .order('date', { ascending: true })
       .order('id', { ascending: true })
 
@@ -322,9 +332,31 @@ export const createEvent = async (eventData, userId) => {
   const resolved = await tryResolveDuplicateBeforeInsert(eventData, userId)
   if (resolved) return resolved
 
+  // Prevent future gaps: if lat/lng missing, try to geocode best available text before insert.
+  // Preference: address > location+city > city.
+  let enriched = eventData
+  try {
+    const hasLatLng =
+      Number.isFinite(Number(eventData?.lat)) && Number.isFinite(Number(eventData?.lng))
+    if (!hasLatLng) {
+      const address = String(eventData?.address || '').trim()
+      const location = String(eventData?.location || '').trim()
+      const city = String(eventData?.city || '').trim()
+      const query = address || (location && city ? `${location}, ${city}` : '') || city || ''
+      if (query) {
+        const coords = await geocodeAddress(query, { retries: 2 }).catch(() => null)
+        if (coords?.lat != null && coords?.lng != null) {
+          enriched = { ...eventData, lat: coords.lat, lng: coords.lng }
+        }
+      }
+    }
+  } catch {
+    // Geocoding failures should never block event creation.
+  }
+
   const { data, error } = await supabase
     .from('events')
-    .insert([{ ...eventData, user_id: userId }])
+    .insert([{ ...enriched, user_id: userId }])
     .select(
       'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
     )
@@ -731,6 +763,16 @@ export const getAttendanceStatus = async (eventId, userId) => {
     .eq('user_id', userId)
     .single()
   return !!data
+}
+
+export const fetchEventAttendeeCount = async (eventId) => {
+  if (!eventId) return 0
+  const { count, error } = await supabase
+    .from('event_attendees')
+    .select('id', { count: 'exact', head: true })
+    .eq('event_id', eventId)
+  if (error) throw error
+  return count || 0
 }
 
 export const getEventRsvpStatus = async (eventId, userId) => {
