@@ -69,6 +69,15 @@ const buildEventsSearchOrFilter = (search) => {
 const EVENT_FETCH_PAGE_SIZE = 1000
 const EVENT_FETCH_MAX_PAGES = 50
 
+const dateKeyLocalToday = () => {
+  const d = new Date()
+  if (!Number.isFinite(d.getTime())) return new Date().toISOString().split('T')[0]
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
 const mapCreateEventError = (error) => {
   const code = String(error?.code || '')
   const message = String(error?.message || '')
@@ -271,7 +280,8 @@ export const createEventUpdate = async (eventId, userId, message) => {
 
 export const fetchEvents = async (filters = {}) => {
   const searchOr = filters.search ? buildEventsSearchOrFilter(filters.search) : null
-  const todayKey = new Date().toISOString().split('T')[0]
+  // Use LOCAL day boundary so events aren't hidden as "past" in the evening (UTC rollover).
+  const todayKey = dateKeyLocalToday()
 
   const rows = []
   for (let page = 0; page < EVENT_FETCH_MAX_PAGES; page++) {

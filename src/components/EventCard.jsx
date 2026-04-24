@@ -21,7 +21,11 @@ const getDirectionsUrl = (event) => {
 export default function EventCard({ event, onClick, saved = false, onToggleSaved }) {
   const { isLight } = useTheme()
   const color = TYPE_COLORS[event.type] || '#FF6B35'
-  const today = new Date().toISOString().split('T')[0]
+  // Local day boundary to match feed filtering (avoid UTC rollover hiding "today" events).
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`
   const isToday = event.date === today
   const isPast = event.date < today
   const posterUsername = event?.profiles?.username

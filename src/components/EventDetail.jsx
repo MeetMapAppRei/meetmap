@@ -691,7 +691,11 @@ export default function EventDetail({
     }
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  // Local day boundary to match feed filtering (avoid UTC rollover hiding "today" events).
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`
   const isPast = event.date < today
 
   const overlayBg = isLight ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.92)'

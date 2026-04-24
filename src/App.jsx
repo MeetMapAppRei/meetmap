@@ -37,6 +37,7 @@ import MapView from './components/MapView'
 import ImportQueueModal from './components/ImportQueueModal'
 import ModerationQueueModal from './components/ModerationQueueModal'
 import PlayStoreBanner from './components/PlayStoreBanner'
+import FirstEventNudge from './components/FirstEventNudge'
 import { apiUrl } from './lib/apiOrigin'
 import { geocodeAddress } from './lib/geocode'
 import { makeClientUuid } from './lib/clientUuid'
@@ -47,6 +48,17 @@ const parseCsvEnv = (value) =>
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean)
+
+const openNotificationLink = async (action) => {
+  try {
+    const data = action?.notification?.data || {}
+    const url = String(data.web_link || data.deep_link || '').trim()
+    if (!url) return
+    window.location.href = url
+  } catch (e) {
+    console.warn('Failed to open notification link:', e)
+  }
+}
 
 const IMPORT_ADMIN_EMAILS = parseCsvEnv(import.meta.env.VITE_IMPORT_ADMIN_EMAILS).map((v) =>
   v.toLowerCase(),
@@ -79,6 +91,16 @@ const getStatusSnapshotStorageKey = (user) => `meetmap:status-snapshot:${user?.i
 const getStatusNotifiedStorageKey = (user) => `meetmap:status-notified:${user?.id || 'anon'}`
 const getUpdateSnapshotStorageKey = (user) => `meetmap:update-snapshot:${user?.id || 'anon'}`
 const getUpdateNotifiedStorageKey = (user) => `meetmap:update-notified:${user?.id || 'anon'}`
+const NATIVE_PUSH_TOKEN_STORAGE_KEY = 'meetmap:native-push-token'
+
+const getStoredNativePushToken = () => {
+  if (typeof window === 'undefined') return ''
+  try {
+    return String(window.localStorage.getItem(NATIVE_PUSH_TOKEN_STORAGE_KEY) || '').trim()
+  } catch {
+    return ''
+  }
+}
 
 const CITY_SLUG_OVERRIDES = {
   'new-york': 'New York',
@@ -222,7 +244,7 @@ function AppInner() {
   const [notificationPermission, setNotificationPermission] = useState(
     getWebNotificationPermission(),
   )
-  const [pushToken, setPushToken] = useState('')
+  const [pushToken, setPushToken] = useState(getStoredNativePushToken)
 
   const [showImportQueue, setShowImportQueue] = useState(false)
   const [imports, setImports] = useState([])
@@ -396,6 +418,14 @@ function AppInner() {
   }, [])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      if (pushToken) window.localStorage.setItem(NATIVE_PUSH_TOKEN_STORAGE_KEY, pushToken)
+      else window.localStorage.removeItem(NATIVE_PUSH_TOKEN_STORAGE_KEY)
+    } catch {}
+  }, [pushToken])
+
+  useEffect(() => {
     if (!user?.id) return
     if (!pushToken) return
     upsertDevicePushToken({ userId: user.id, token: pushToken, platform: 'android' }).catch(
@@ -461,10 +491,23 @@ function AppInner() {
         )
         return
       }
+      if (pushToken) {
+        await appAlert(
+          user?.id
+            ? 'Alerts are already enabled on this device. Save events to get reminder and update notifications.'
+            : 'Alerts are enabled on this device. Log in and save events to actually receive reminder and update notifications.',
+        )
+        return
+      }
       try {
         const result = await initializeNativePush({
           onToken: async (token) => {
             if (token) setPushToken(token)
+          },
+          onNotificationTap: (action) => {
+            // FCM payload includes `web_link` (and optionally `deep_link`) in `data`.
+            // Opening the web link is the most reliable cross-device behavior.
+            void openNotificationLink(action)
           },
           onRegistrationError: (error) => {
             console.error('Native push registration failed:', error)
@@ -474,11 +517,19 @@ function AppInner() {
           },
         })
         setNotificationPermission(result?.enabled ? 'granted' : 'denied')
+        if (result?.token) setPushToken(result.token)
         if (result?.enabled && user?.id) {
           await upsertNotificationPreferences(user.id, {
             reminders_enabled: true,
             event_updates_enabled: true,
           })
+          await appAlert(
+            'Alerts are enabled. Save events to receive reminder and update notifications on this phone.',
+          )
+        } else if (result?.enabled) {
+          await appAlert(
+            'Alerts are enabled on this phone. Log in and save events to receive reminder and update notifications.',
+          )
         } else if (!result?.enabled) {
           const r = result?.reason
           if (r === 'permission-denied') {
@@ -535,10 +586,14 @@ function AppInner() {
   }
 
   const nativePushTemporarilyDisabled = isNativeAndroidPushSupported() && !NATIVE_PUSH_ENABLED
+  const alertsEnabled = isNativeAndroidPushSupported()
+    ? Boolean(pushToken) && !nativePushTemporarilyDisabled
+    : notificationPermission === 'granted'
 
   const baseEvents = showSavedOnly ? events.filter((e) => savedEventIds.includes(e.id)) : events
 
-  const todayKey = new Date().toISOString().split('T')[0]
+  // Local day boundary: avoids "missing" events when UTC has rolled over.
+  const todayKey = toDateKeyLocal(new Date())
   // When toggled, show ONLY past events (not "include past").
   const pastFilteredEvents = showPast
     ? baseEvents.filter((e) => String(e?.date || '') < todayKey)
@@ -590,9 +645,7 @@ function AppInner() {
           .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
       : eventsFilteredForWeek
 
-  const upcomingCount = eventsForCurrentView.filter(
-    (e) => e.date >= new Date().toISOString().split('T')[0],
-  ).length
+  const upcomingCount = eventsForCurrentView.filter((e) => e.date >= todayKey).length
 
   const searchScopeLabel = (() => {
     if (nearMeOnly) return 'Near you'
@@ -1304,10 +1357,10 @@ function AppInner() {
               onClick={handleEnableNotifications}
               style={{
                 background: 'none',
-                border: `1px solid ${notificationPermission === 'granted' ? '#FF6B35' : isLight ? '#E5E5E5' : '#222'}`,
+                border: `1px solid ${alertsEnabled ? '#FF6B35' : isLight ? '#E5E5E5' : '#222'}`,
                 borderRadius: 8,
                 padding: '7px 9px',
-                color: notificationPermission === 'granted' ? '#FF8A5C' : isLight ? '#444' : '#555',
+                color: alertsEnabled ? '#FF8A5C' : isLight ? '#444' : '#555',
                 fontFamily: "'DM Sans', sans-serif",
                 fontSize: 11,
                 cursor: 'pointer',
@@ -1317,10 +1370,12 @@ function AppInner() {
               title={
                 nativePushTemporarilyDisabled
                   ? 'Alerts unavailable in this build (env flag). Tap for details.'
-                  : 'Enable reminders for saved events'
+                  : alertsEnabled
+                    ? 'Alerts enabled on this device'
+                    : 'Enable reminders for saved events'
               }
             >
-              {notificationPermission === 'granted' ? 'Alerts On' : 'Alerts'}
+              {alertsEnabled ? 'Alerts On' : 'Alerts'}
             </button>
             {canAccessImports && (
               <button
@@ -1581,6 +1636,10 @@ function AppInner() {
             bottomNavHeight={
               BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)
             }
+          />
+          <FirstEventNudge
+            bottomOffsetPx={BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)}
+            onPost={() => (user ? setShowPost(true) : setShowAuth(true))}
           />
         </div>
       )}
