@@ -6,8 +6,8 @@ import {
   supabase,
   R2_RELAY_IMAGE_MAX_BYTES,
 } from '../lib/supabase'
-import { useAuth } from '../lib/AuthContext'
-import { useTheme } from '../lib/ThemeContext'
+import { useAuth } from '../lib/useAuth'
+import { useTheme } from '../lib/useTheme'
 import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
@@ -68,6 +68,17 @@ function buildGeocodeQuery(address, city) {
   if (!c) return a
   if (a.includes(',')) return a
   return `${a}, ${c}`
+}
+
+function buildBestEventGeocodeQuery({ address, location, city }) {
+  const a = String(address || '').trim()
+  const l = String(location || '').trim()
+  const c = String(city || '').trim()
+  if (a) return buildGeocodeQuery(a, c)
+  if (l && c) return `${l}, ${c}`.trim()
+  if (c) return c
+  if (l) return l
+  return ''
 }
 
 async function withNetworkRetries(fn, attempts = 5) {
@@ -655,10 +666,13 @@ export default function PostEventForm({ onClose, onPosted }) {
     try {
       correlationId = makeClientUuid()
       let finalCoords = coords
-      if (form.address && !finalCoords) {
-        finalCoords = await withNetworkRetries(() =>
-          geocodeAddress(buildGeocodeQuery(form.address, form.city), { retries: 2 }),
-        ).catch(() => null)
+      if (!finalCoords) {
+        const query = buildBestEventGeocodeQuery(form)
+        if (query) {
+          finalCoords = await withNetworkRetries(() => geocodeAddress(query, { retries: 2 })).catch(
+            () => null,
+          )
+        }
       }
       const tagsArray = form.tags
         .split(',')

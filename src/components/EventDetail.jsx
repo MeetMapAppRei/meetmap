@@ -13,8 +13,8 @@ import {
   createEventUpdate,
   fetchEventUpdates,
 } from '../lib/supabase'
-import { useAuth } from '../lib/AuthContext'
-import { useTheme } from '../lib/ThemeContext'
+import { useAuth } from '../lib/useAuth'
+import { useTheme } from '../lib/useTheme'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'

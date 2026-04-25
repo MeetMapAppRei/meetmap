@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Capacitor } from '@capacitor/core'
-import { useTheme } from '../lib/ThemeContext'
+import { useTheme } from '../lib/useTheme'
 
 const STORAGE_KEY = 'meetmap:android-app-promo-snooze-until'
 const SNOOZE_MS = 10 * 24 * 60 * 60 * 1000

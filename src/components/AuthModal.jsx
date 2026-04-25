@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { signIn, signUp, supabase } from '../lib/supabase'
-import { useTheme } from '../lib/ThemeContext'
+import { useTheme } from '../lib/useTheme'
 
 const S = {
   overlay: {

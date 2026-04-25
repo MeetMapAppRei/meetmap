@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useTheme } from '../lib/ThemeContext'
+import { useTheme } from '../lib/useTheme'
 
 export default function ModerationQueueModal({
   reports,

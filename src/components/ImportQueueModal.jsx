@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useTheme } from '../lib/ThemeContext'
+import { useTheme } from '../lib/useTheme'
 
 const TYPE_LABELS = {
   meet: 'Meet',

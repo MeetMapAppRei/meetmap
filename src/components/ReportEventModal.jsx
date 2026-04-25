@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useTheme } from '../lib/ThemeContext'
+import { useTheme } from '../lib/useTheme'
 import { createEventReport } from '../lib/supabase'
 
 const REASONS = [

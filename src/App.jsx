@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { AuthProvider, useAuth } from './lib/AuthContext'
+import { AuthProvider } from './lib/AuthContext'
+import { useAuth } from './lib/useAuth'
 import {
   createEvent,
   fetchEvents,
@@ -21,7 +22,8 @@ import {
   fetchNotificationPreferences,
 } from './lib/supabase'
 import { dedupeEventsByLikelyDuplicate } from './lib/eventDedupe'
-import { ThemeProvider, useTheme } from './lib/ThemeContext'
+import { ThemeProvider } from './lib/ThemeContext'
+import { useTheme } from './lib/useTheme'
 import {
   getWebNotificationPermission,
   requestWebNotificationPermission,

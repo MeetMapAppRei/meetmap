@@ -1,4 +1,4 @@
-import { useTheme } from '../lib/ThemeContext'
+import { useTheme } from '../lib/useTheme'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 
