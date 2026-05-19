@@ -10,7 +10,7 @@ import { useAuth } from '../lib/useAuth'
 import { useTheme } from '../lib/useTheme'
 import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
-import { buildGeocodeQuery } from '../lib/eventLocation'
+import { buildEventLocationQuery, buildGeocodeQuery } from '../lib/eventLocation'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import { compressImageForUploadUnder } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
@@ -561,7 +561,11 @@ export default function PostEventForm({ onClose, onPosted }) {
       }
       // Fill in the form with extracted info
       const bestAddress = info.verified_address || info.address || ''
-      const geocodeQuery = buildGeocodeQuery(bestAddress, info.city)
+      const geocodeQuery = buildEventLocationQuery({
+        address: bestAddress,
+        location: info.location || '',
+        city: info.city || '',
+      })
       const allDates = normalizeFlyerDates(info)
       const primaryDate = allDates[0] || info.date || ''
       if (allDates.length > 1) setFlyerDates(allDates)
@@ -615,7 +619,13 @@ export default function PostEventForm({ onClose, onPosted }) {
     setAddressStatus('')
     setCoords(null)
     try {
-      const result = await geocodeAddress(buildGeocodeQuery(form.address, form.city))
+      const result = await geocodeAddress(
+        buildEventLocationQuery({
+          address: form.address,
+          location: form.location,
+          city: form.city,
+        }),
+      )
       if (result) {
         setCoords(result)
         setAddressStatus('found')

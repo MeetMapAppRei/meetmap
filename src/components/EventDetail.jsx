@@ -19,7 +19,7 @@ import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'
 import { geocodeAddress } from '../lib/geocode'
-import { buildGeocodeQuery, getDirectionsUrl } from '../lib/eventLocation'
+import { buildEventLocationQuery, getDirectionsUrl } from '../lib/eventLocation'
 import { makeClientUuid } from '../lib/clientUuid'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import ReportEventModal from './ReportEventModal'
@@ -130,7 +130,13 @@ function EditForm({ event, onSaved, onCancel }) {
     setAddressStatus('')
     setCoords(null)
     try {
-      const result = await geocodeAddress(buildGeocodeQuery(form.address, form.city))
+      const result = await geocodeAddress(
+        buildEventLocationQuery({
+          address: form.address,
+          location: form.location,
+          city: form.city,
+        }),
+      )
       if (result) {
         setCoords(result)
         setAddressStatus('found')
@@ -158,10 +164,16 @@ function EditForm({ event, onSaved, onCancel }) {
     const correlationId = makeClientUuid()
     try {
       let finalCoords = coords
-      if (form.address && !finalCoords)
-        finalCoords = await geocodeAddress(buildGeocodeQuery(form.address, form.city)).catch(
-          () => null,
-        )
+      if (form.address.trim()) {
+        const geocoded = await geocodeAddress(
+          buildEventLocationQuery({
+            address: form.address,
+            location: form.location,
+            city: form.city,
+          }),
+        ).catch(() => null)
+        if (geocoded) finalCoords = geocoded
+      }
 
       const tagsArray = form.tags
         .split(',')
