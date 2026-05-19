@@ -151,14 +151,26 @@ async function getRecipientsForEvent(eventId: string) {
 
   const { data: prefs, error: prefsErr } = await supabase
     .from('user_notification_preferences')
-    .select('user_id, reminders_enabled, event_updates_enabled')
+    .select(
+      'user_id, reminders_enabled, event_updates_enabled, reminder_24h_enabled, reminder_2h_enabled',
+    )
     .in('user_id', userIds)
   if (prefsErr) throw prefsErr
-  const prefMap = new Map<string, { reminders_enabled: boolean; event_updates_enabled: boolean }>()
+  const prefMap = new Map<
+    string,
+    {
+      reminders_enabled: boolean
+      event_updates_enabled: boolean
+      reminder_24h_enabled: boolean
+      reminder_2h_enabled: boolean
+    }
+  >()
   for (const p of prefs || []) {
     prefMap.set(p.user_id, {
       reminders_enabled: p.reminders_enabled !== false,
       event_updates_enabled: p.event_updates_enabled !== false,
+      reminder_24h_enabled: p.reminder_24h_enabled !== false,
+      reminder_2h_enabled: p.reminder_2h_enabled !== false,
     })
   }
 
@@ -176,6 +188,8 @@ async function getRecipientsForEvent(eventId: string) {
     prefs: prefMap.get(row.user_id as string) || {
       reminders_enabled: true,
       event_updates_enabled: true,
+      reminder_24h_enabled: true,
+      reminder_2h_enabled: true,
     },
   }))
 }
@@ -298,6 +312,14 @@ async function runReminderTick(req: NotifyRequest) {
       const recipients = await getRecipientsForEvent(event.id)
       for (const r of recipients) {
         if (!r.prefs.reminders_enabled) {
+          skipped += 1
+          continue
+        }
+        if (w.id === '24h' && r.prefs.reminder_24h_enabled === false) {
+          skipped += 1
+          continue
+        }
+        if (w.id === '2h' && r.prefs.reminder_2h_enabled === false) {
           skipped += 1
           continue
         }

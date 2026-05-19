@@ -24,7 +24,9 @@ This phase enables:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `FCM_SERVER_KEY`
+- `FCM_PROJECT_ID` (Firebase project id, e.g. from `google-services.json` → `project_info.project_id`)
+- `FCM_CLIENT_EMAIL` (service account `client_email`)
+- `FCM_PRIVATE_KEY` (service account `private_key` — keep the `-----BEGIN PRIVATE KEY-----` lines; newlines can be stored as `\n`)
 - `APP_DEEPLINK_BASE` (optional, default `meetmap://event/`)
 - `APP_WEB_BASE` (optional, default `https://www.findcarmeets.com/?event=`)
 
@@ -45,6 +47,16 @@ This phase enables:
 4. Set Android Firebase config (`google-services.json`) and run:
    - `npm run cap:sync`
 5. Open app on Android and tap Alerts to register token.
+
+## User preferences
+
+Per-user settings live in `user_notification_preferences`:
+
+- `reminders_enabled` — master switch for start-time reminders
+- `reminder_24h_enabled` / `reminder_2h_enabled` — per-window reminders (apply migration `sql/push-notifications-preferences-v2.sql`)
+- `event_updates_enabled` — host updates and status changes
+
+Users edit these in the app via **Alerts** → **Alert settings** (logged-in accounts sync across devices).
 
 ## How delivery works
 

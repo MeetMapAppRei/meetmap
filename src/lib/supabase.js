@@ -954,7 +954,9 @@ export const fetchNotificationPreferences = async (userId) => {
   if (!userId) return null
   const { data, error } = await supabase
     .from('user_notification_preferences')
-    .select('user_id, reminders_enabled, event_updates_enabled, created_at, updated_at')
+    .select(
+      'user_id, reminders_enabled, event_updates_enabled, reminder_24h_enabled, reminder_2h_enabled, created_at, updated_at',
+    )
     .eq('user_id', userId)
     .maybeSingle()
   if (error) throw error
@@ -963,16 +965,39 @@ export const fetchNotificationPreferences = async (userId) => {
 
 export const upsertNotificationPreferences = async (userId, prefs = {}) => {
   if (!userId) return null
+  const existing = await fetchNotificationPreferences(userId)
+  const current = {
+    reminders_enabled: existing?.reminders_enabled !== false,
+    event_updates_enabled: existing?.event_updates_enabled !== false,
+    reminder_24h_enabled: existing?.reminder_24h_enabled !== false,
+    reminder_2h_enabled: existing?.reminder_2h_enabled !== false,
+  }
   const payload = {
     user_id: userId,
-    reminders_enabled: prefs.reminders_enabled !== false,
-    event_updates_enabled: prefs.event_updates_enabled !== false,
+    reminders_enabled:
+      typeof prefs.reminders_enabled === 'boolean'
+        ? prefs.reminders_enabled
+        : current.reminders_enabled,
+    event_updates_enabled:
+      typeof prefs.event_updates_enabled === 'boolean'
+        ? prefs.event_updates_enabled
+        : current.event_updates_enabled,
+    reminder_24h_enabled:
+      typeof prefs.reminder_24h_enabled === 'boolean'
+        ? prefs.reminder_24h_enabled
+        : current.reminder_24h_enabled,
+    reminder_2h_enabled:
+      typeof prefs.reminder_2h_enabled === 'boolean'
+        ? prefs.reminder_2h_enabled
+        : current.reminder_2h_enabled,
     updated_at: new Date().toISOString(),
   }
   const { data, error } = await supabase
     .from('user_notification_preferences')
     .upsert([payload], { onConflict: 'user_id' })
-    .select('user_id, reminders_enabled, event_updates_enabled, created_at, updated_at')
+    .select(
+      'user_id, reminders_enabled, event_updates_enabled, reminder_24h_enabled, reminder_2h_enabled, created_at, updated_at',
+    )
     .single()
   if (error) throw error
   return data

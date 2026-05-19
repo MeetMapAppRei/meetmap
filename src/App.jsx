@@ -32,6 +32,12 @@ import {
   getNativePushPermission,
 } from './lib/pushNotifications'
 import AuthModal from './components/AuthModal'
+import NotificationSettingsModal from './components/NotificationSettingsModal'
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  normalizeNotificationPreferences,
+  isReminderWindowEnabled,
+} from './lib/notificationPreferences'
 import PostEventForm from './components/PostEventForm'
 import EventDetail from './components/EventDetail'
 import EventCard from './components/EventCard'
@@ -251,6 +257,11 @@ function AppInner() {
     getWebNotificationPermission(),
   )
   const [pushToken, setPushToken] = useState(getStoredNativePushToken)
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false)
+  const [notificationPrefs, setNotificationPrefs] = useState(() => ({
+    ...DEFAULT_NOTIFICATION_PREFERENCES,
+  }))
+  const [notificationPrefsSaving, setNotificationPrefsSaving] = useState(false)
 
   const [showImportQueue, setShowImportQueue] = useState(false)
   const [imports, setImports] = useState([])
@@ -510,20 +521,34 @@ function AppInner() {
   }, [user, pushToken])
 
   useEffect(() => {
-    if (!user?.id) return
-    if (notificationPermission !== 'granted') return
+    if (!user?.id) {
+      setNotificationPrefs({ ...DEFAULT_NOTIFICATION_PREFERENCES })
+      return
+    }
+    const deviceReady = Boolean(pushToken) || notificationPermission === 'granted'
+    if (!deviceReady) return
+
+    let cancelled = false
     fetchNotificationPreferences(user.id)
-      .then((prefs) => {
-        if (prefs) return prefs
-        return upsertNotificationPreferences(user.id, {
-          reminders_enabled: true,
-          event_updates_enabled: true,
+      .then((row) => {
+        if (cancelled) return
+        if (row) {
+          setNotificationPrefs(normalizeNotificationPreferences(row))
+          return
+        }
+        return upsertNotificationPreferences(user.id, {}).then((created) => {
+          if (!cancelled && created) {
+            setNotificationPrefs(normalizeNotificationPreferences(created))
+          }
         })
       })
       .catch((error) => {
         console.error('Failed to load notification preferences:', error)
       })
-  }, [user, notificationPermission])
+    return () => {
+      cancelled = true
+    }
+  }, [user, pushToken, notificationPermission])
 
   const toRad = (deg) => (deg * Math.PI) / 180
   const distanceMiles = (lat1, lon1, lat2, lon2) => {
@@ -565,14 +590,6 @@ function AppInner() {
         )
         return
       }
-      if (pushToken) {
-        await appAlert(
-          user?.id
-            ? 'Alerts are already enabled on this device. Save events to get reminder and update notifications.'
-            : 'Alerts are enabled on this device. Log in and save events to actually receive reminder and update notifications.',
-        )
-        return
-      }
       try {
         const result = await initializeNativePush({
           onToken: async (token) => {
@@ -593,17 +610,10 @@ function AppInner() {
         setNotificationPermission(result?.enabled ? 'granted' : 'denied')
         if (result?.token) setPushToken(result.token)
         if (result?.enabled && user?.id) {
-          await upsertNotificationPreferences(user.id, {
-            reminders_enabled: true,
-            event_updates_enabled: true,
-          })
-          await appAlert(
-            'Alerts are enabled. Save events to receive reminder and update notifications on this phone.',
-          )
+          await upsertNotificationPreferences(user.id, {})
+          setShowNotificationSettings(true)
         } else if (result?.enabled) {
-          await appAlert(
-            'Alerts are enabled on this phone. Log in and save events to receive reminder and update notifications.',
-          )
+          setShowNotificationSettings(true)
         } else if (!result?.enabled) {
           const r = result?.reason
           if (r === 'permission-denied') {
@@ -648,15 +658,40 @@ function AppInner() {
     try {
       const permission = await requestWebNotificationPermission()
       setNotificationPermission(permission)
-      if (permission === 'granted' && user?.id) {
-        await upsertNotificationPreferences(user.id, {
-          reminders_enabled: true,
-          event_updates_enabled: true,
-        })
+      if (permission === 'granted') {
+        if (user?.id) await upsertNotificationPreferences(user.id, {})
+        setShowNotificationSettings(true)
       }
     } catch (e) {
       console.error('Notification permission request failed:', e)
     }
+  }
+
+  const handleNotificationPrefChange = async (patch) => {
+    const next = { ...notificationPrefs, ...patch }
+    setNotificationPrefs(next)
+    if (!user?.id) return
+    setNotificationPrefsSaving(true)
+    try {
+      const saved = await upsertNotificationPreferences(user.id, next)
+      if (saved) setNotificationPrefs(normalizeNotificationPreferences(saved))
+    } catch (error) {
+      console.error('Failed to save notification preferences:', error)
+      try {
+        const row = await fetchNotificationPreferences(user.id)
+        if (row) setNotificationPrefs(normalizeNotificationPreferences(row))
+      } catch {}
+    } finally {
+      setNotificationPrefsSaving(false)
+    }
+  }
+
+  const handleAlertsClick = async () => {
+    if (!alertsEnabled) {
+      await handleEnableNotifications()
+      return
+    }
+    setShowNotificationSettings(true)
   }
 
   const nativePushTemporarilyDisabled = isNativeAndroidPushSupported() && !NATIVE_PUSH_ENABLED
@@ -732,6 +767,7 @@ function AppInner() {
     if (isNativeAndroidPushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
+    if (!notificationPrefs.reminders_enabled) return
     if (!savedEventIds.length || !events.length) return
 
     const reminderLogKey = getReminderLogStorageKey(user)
@@ -753,6 +789,7 @@ function AppInner() {
       const eventLog = reminderLog[event.id] || {}
 
       for (const w of REMINDER_WINDOWS) {
+        if (!isReminderWindowEnabled(notificationPrefs, w.id)) continue
         if (eventLog[w.id]) continue
         const reminderMs = startMs - w.leadMs
         if (now >= reminderMs && now <= reminderMs + w.windowMs) {
@@ -783,12 +820,13 @@ function AppInner() {
         window.localStorage.setItem(reminderLogKey, JSON.stringify(reminderLog))
       } catch {}
     }
-  }, [notificationPermission, savedEventIds, events, user])
+  }, [notificationPermission, notificationPrefs, savedEventIds, events, user])
 
   useEffect(() => {
     if (isNativeAndroidPushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
+    if (!notificationPrefs.event_updates_enabled) return
     if (!savedEventIds.length) return
 
     const snapshotKey = getUpdateSnapshotStorageKey(user)
@@ -845,12 +883,13 @@ function AppInner() {
     checkUpdateChanges()
     const interval = window.setInterval(checkUpdateChanges, 90 * 1000)
     return () => window.clearInterval(interval)
-  }, [notificationPermission, savedEventIds, events, user])
+  }, [notificationPermission, notificationPrefs, savedEventIds, events, user])
 
   useEffect(() => {
     if (isNativeAndroidPushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
+    if (!notificationPrefs.event_updates_enabled) return
     if (!savedEventIds.length) return
 
     const snapshotKey = getStatusSnapshotStorageKey(user)
@@ -916,7 +955,7 @@ function AppInner() {
     checkStatusChanges()
     const interval = window.setInterval(checkStatusChanges, 90 * 1000)
     return () => window.clearInterval(interval)
-  }, [notificationPermission, savedEventIds, events, user])
+  }, [notificationPermission, notificationPrefs, savedEventIds, events, user])
 
   const requestNearMe = () => {
     setNearMeError('')
@@ -1425,7 +1464,7 @@ function AppInner() {
             </button>
             <button
               type="button"
-              onClick={handleEnableNotifications}
+              onClick={handleAlertsClick}
               style={{
                 background: 'none',
                 border: `1px solid ${alertsEnabled ? '#FF6B35' : isLight ? '#E5E5E5' : '#222'}`,
@@ -1442,7 +1481,7 @@ function AppInner() {
                 nativePushTemporarilyDisabled
                   ? 'Alerts unavailable in this build (env flag). Tap for details.'
                   : alertsEnabled
-                    ? 'Alerts enabled on this device'
+                    ? 'Customize alert settings'
                     : 'Enable reminders for saved events'
               }
             >
@@ -1919,6 +1958,21 @@ function AppInner() {
 
       {/* ── MODALS ── */}
       {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+      {showNotificationSettings && (
+        <NotificationSettingsModal
+          onClose={() => setShowNotificationSettings(false)}
+          alertsEnabled={alertsEnabled}
+          prefs={notificationPrefs}
+          saving={notificationPrefsSaving}
+          canSyncPrefs={Boolean(user?.id)}
+          onPrefChange={handleNotificationPrefChange}
+          onRequestEnable={handleEnableNotifications}
+          onRequestLogin={() => {
+            setShowNotificationSettings(false)
+            setShowAuth(true)
+          }}
+        />
+      )}
       {showPost && <PostEventForm onClose={() => setShowPost(false)} onPosted={handlePosted} />}
       {showImportQueue && canAccessImports && (
         <ImportQueueModal
