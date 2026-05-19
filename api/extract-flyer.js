@@ -55,6 +55,19 @@ function normalizeExtractedDates(extracted) {
 
 const looksLikeUsZip = (s) => /\b\d{5}(?:-\d{4})?\b/.test(String(s || ''))
 
+const US_STATE_ABBR =
+  /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/i
+const PH_MARKERS =
+  /\b(philippines|pilipinas|quezon city|metro manila|makati|manila|cebu|davao|taguig|pasig|caloocan|pasay|katipunan)\b/i
+
+function inferGeocodeCountry(query) {
+  const ctx = String(query || '').trim()
+  if (!ctx) return 'us'
+  if (/\b(USA|United States|U\.S\.A\.)\b/i.test(ctx) || US_STATE_ABBR.test(ctx)) return 'us'
+  if (/\b(philippines|pilipinas)\b/i.test(ctx) || PH_MARKERS.test(ctx)) return 'ph'
+  return 'us'
+}
+
 const buildAddressQueryCandidates = (extracted) => {
   const parts = extracted?.address_parts || {}
   const street = norm(parts.street)
@@ -94,7 +107,8 @@ const buildAddressQueryCandidates = (extracted) => {
 
 async function nominatimLookup(query) {
   const q = encodeURIComponent(norm(query))
-  const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&addressdetails=1&countrycodes=us`
+  const country = inferGeocodeCountry(query)
+  const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&addressdetails=1&countrycodes=${encodeURIComponent(country)}`
   const res = await fetch(url, {
     headers: {
       Accept: 'application/json',

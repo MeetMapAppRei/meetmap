@@ -18,7 +18,7 @@ import { useTheme } from '../lib/useTheme'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'
-import { geocodeAddress } from '../lib/geocode'
+import { areEventCoordsPlausible, geocodeAddress } from '../lib/geocode'
 import { buildEventLocationQuery, getDirectionsUrl } from '../lib/eventLocation'
 import { makeClientUuid } from '../lib/clientUuid'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
@@ -508,6 +508,7 @@ export default function EventDetail({
   const [toast, setToast] = useState('')
   const [showReport, setShowReport] = useState(false)
   const bottomRef = useRef()
+  const coordRepairRef = useRef(null)
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
   const statusKey = ['active', 'moved', 'delayed', 'canceled'].includes(
@@ -519,6 +520,36 @@ export default function EventDetail({
   const quality = getEventQuality(event)
   const directionsUrl = getDirectionsUrl(event)
   const isOwner = user && event.user_id === user.id
+
+  // Fix pins geocoded under country=us when the address is abroad (e.g. White Plains, MD vs Quezon City).
+  useEffect(() => {
+    if (editing || areEventCoordsPlausible(event)) return
+    if (coordRepairRef.current === event.id) return
+    const query = buildEventLocationQuery(event)
+    if (!query) return
+    coordRepairRef.current = event.id
+    let cancelled = false
+    geocodeAddress(query)
+      .then(async (fixed) => {
+        if (cancelled || !fixed) return
+        const next = { ...event, lat: fixed.lat, lng: fixed.lng }
+        setEvent(next)
+        if (isOwner) {
+          try {
+            const updated = await updateEvent(event.id, { lat: fixed.lat, lng: fixed.lng })
+            onUpdated?.(updated || next)
+          } catch {
+            onUpdated?.(next)
+          }
+        } else {
+          onUpdated?.(next)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [editing, event, isOwner, onUpdated])
 
   useEffect(() => {
     fetchComments(event.id).then(setComments).catch(console.error)
