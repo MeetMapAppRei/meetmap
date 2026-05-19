@@ -10,6 +10,7 @@ import { useAuth } from '../lib/useAuth'
 import { useTheme } from '../lib/useTheme'
 import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
+import { buildGeocodeQuery } from '../lib/eventLocation'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import { compressImageForUploadUnder } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
@@ -58,16 +59,6 @@ function formatIsoDateLabel(iso) {
     day: 'numeric',
     year: 'numeric',
   })
-}
-
-function buildGeocodeQuery(address, city) {
-  const a = String(address || '').trim()
-  const c = String(city || '').trim()
-  if (!a) return ''
-  // If the address already contains a comma (often includes city/state), don't double-append.
-  if (!c) return a
-  if (a.includes(',')) return a
-  return `${a}, ${c}`
 }
 
 function buildBestEventGeocodeQuery({ address, location, city }) {

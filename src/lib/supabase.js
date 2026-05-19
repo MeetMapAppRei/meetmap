@@ -3,6 +3,7 @@ import { compressImageForUpload, compressImageForUploadUnder } from './compressI
 import { apiUrl, apiUrlCandidates } from './apiOrigin'
 import { eventsLikelyDuplicatePair } from './eventDedupe'
 import { geocodeAddress } from './geocode'
+import { buildEventLocationQuery } from './eventLocation'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
 // Important: fallback must be valid for your Supabase project.
@@ -349,10 +350,7 @@ export const createEvent = async (eventData, userId) => {
     const hasLatLng =
       Number.isFinite(Number(eventData?.lat)) && Number.isFinite(Number(eventData?.lng))
     if (!hasLatLng) {
-      const address = String(eventData?.address || '').trim()
-      const location = String(eventData?.location || '').trim()
-      const city = String(eventData?.city || '').trim()
-      const query = address || (location && city ? `${location}, ${city}` : '') || city || ''
+      const query = buildEventLocationQuery(eventData)
       if (query) {
         const coords = await geocodeAddress(query, { retries: 2 }).catch(() => null)
         if (coords?.lat != null && coords?.lng != null) {

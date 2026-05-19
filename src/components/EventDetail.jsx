@@ -19,6 +19,7 @@ import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'
 import { geocodeAddress } from '../lib/geocode'
+import { buildGeocodeQuery, getDirectionsUrl } from '../lib/eventLocation'
 import { makeClientUuid } from '../lib/clientUuid'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import ReportEventModal from './ReportEventModal'
@@ -35,11 +36,6 @@ const STATUS_META = {
   delayed: { label: 'Delayed', fg: '#FFD700', bg: '#FFD70022' },
   canceled: { label: 'Canceled', fg: '#FF6060', bg: '#FF353522' },
 }
-const getDirectionsUrl = (event) => {
-  const query = (event?.address || `${event?.location || ''}, ${event?.city || ''}`).trim()
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
-}
-
 const formatRelativeTime = (value) => {
   const ms = value ? new Date(value).getTime() : NaN
   if (!Number.isFinite(ms)) return ''
@@ -127,15 +123,6 @@ function EditForm({ event, onSaved, onCancel }) {
   const [error, setError] = useState('')
 
   const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }))
-
-  const buildGeocodeQuery = (address, city) => {
-    const a = String(address || '').trim()
-    const c = String(city || '').trim()
-    if (!a) return ''
-    if (!c) return a
-    if (a.includes(',')) return a
-    return `${a}, ${c}`
-  }
 
   const handleAddressBlur = async () => {
     if (!form.address.trim()) return

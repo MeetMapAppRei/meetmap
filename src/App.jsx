@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { AuthProvider } from './lib/AuthContext'
 import { useAuth } from './lib/useAuth'
 import {
@@ -42,6 +42,7 @@ import PlayStoreBanner from './components/PlayStoreBanner'
 import FirstEventNudge from './components/FirstEventNudge'
 import { apiUrl } from './lib/apiOrigin'
 import { geocodeAddress } from './lib/geocode'
+import { buildEventLocationQuery } from './lib/eventLocation'
 import { makeClientUuid } from './lib/clientUuid'
 import { appAlert } from './lib/appAlert'
 
@@ -236,6 +237,9 @@ function AppInner() {
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const selectedEventOpenRef = useRef(false)
+  const eventCardHistoryPushedRef = useRef(false)
+  const ignoreNextPopstateRef = useRef(false)
   const [showAuth, setShowAuth] = useState(false)
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
@@ -298,6 +302,74 @@ function AppInner() {
     } catch {}
   }, [])
 
+  const closeSelectedEvent = useCallback(
+    (opts = {}) => {
+      const fromPopstate = Boolean(opts.fromPopstate)
+      // Clear UI state immediately.
+      setSelectedEvent(null)
+      setMapSelected(null)
+
+      // If we inserted a synthetic history entry for the open card, remove it
+      // when closing via UI (X button, auth flow, delete, etc).
+      if (eventCardHistoryPushedRef.current && !fromPopstate) {
+        try {
+          ignoreNextPopstateRef.current = true
+          window.history.back()
+        } catch {
+          // If history.back() fails for any reason, just mark it as cleaned.
+          ignoreNextPopstateRef.current = false
+          eventCardHistoryPushedRef.current = false
+        }
+      } else if (fromPopstate) {
+        // Back gesture already popped the synthetic entry.
+        eventCardHistoryPushedRef.current = false
+      }
+    },
+    [setSelectedEvent, setMapSelected],
+  )
+
+  useEffect(() => {
+    selectedEventOpenRef.current = Boolean(selectedEvent)
+  }, [selectedEvent])
+
+  // Android physical back button / browser back should close the event card first.
+  // We do this by inserting a synthetic history entry when the card opens.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    if (selectedEvent && !eventCardHistoryPushedRef.current) {
+      try {
+        window.history.pushState({ eventCardOpen: true }, '')
+        eventCardHistoryPushedRef.current = true
+      } catch {
+        eventCardHistoryPushedRef.current = false
+      }
+    }
+  }, [selectedEvent])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const onPopstate = () => {
+      if (ignoreNextPopstateRef.current) {
+        ignoreNextPopstateRef.current = false
+        eventCardHistoryPushedRef.current = false
+        return
+      }
+
+      if (selectedEventOpenRef.current) {
+        // Back gesture while card is open: close it (do not navigate away).
+        closeSelectedEvent({ fromPopstate: true })
+      } else {
+        // Not open — keep our bookkeeping in sync.
+        eventCardHistoryPushedRef.current = false
+      }
+    }
+
+    window.addEventListener('popstate', onPopstate)
+    return () => window.removeEventListener('popstate', onPopstate)
+  }, [closeSelectedEvent])
+
   const loadEvents = useCallback(async () => {
     setLoading(true)
     try {
@@ -337,7 +409,7 @@ function AppInner() {
   }
 
   const handleAuthNeeded = () => {
-    setSelectedEvent(null)
+    closeSelectedEvent()
     setShowAuth(true)
   }
 
@@ -1101,10 +1173,7 @@ function AppInner() {
       if (!ready) return
 
       let coords = null
-      // Prefer AI-provided full address; otherwise fall back to venue + city.
-      const query = imp.address?.trim()
-        ? imp.address
-        : `${imp.location || ''}, ${imp.city || ''}`.trim()
+      const query = buildEventLocationQuery(imp)
       if (query) coords = await geocodeAddress(query).catch(() => null)
 
       const tags = Array.isArray(imp.tags) ? imp.tags : []
@@ -1887,12 +1956,12 @@ function AppInner() {
           event={selectedEvent}
           saved={savedEventIds.includes(selectedEvent.id)}
           onToggleSaved={() => handleToggleSaved(selectedEvent.id)}
-          onClose={() => setSelectedEvent(null)}
+          onClose={() => closeSelectedEvent()}
           onAuthNeeded={handleAuthNeeded}
           onUpdated={handleUpdated}
           onDeleted={(id) => {
             setEvents((prev) => prev.filter((e) => e.id !== id))
-            setSelectedEvent(null)
+            closeSelectedEvent()
           }}
         />
       )}

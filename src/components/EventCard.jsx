@@ -1,6 +1,7 @@
 import { useTheme } from '../lib/useTheme'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
+import { getDirectionsUrl } from '../lib/eventLocation'
 
 const TYPE_COLORS = {
   meet: '#FF6B35',
@@ -13,11 +14,6 @@ const STATUS_META = {
   delayed: { label: 'Delayed', fg: '#FFD700', bg: '#FFD70022' },
   canceled: { label: 'Canceled', fg: '#FF6060', bg: '#FF353522' },
 }
-const getDirectionsUrl = (event) => {
-  const query = (event?.address || `${event?.location || ''}, ${event?.city || ''}`).trim()
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
-}
-
 export default function EventCard({ event, onClick, saved = false, onToggleSaved }) {
   const { isLight } = useTheme()
   const color = TYPE_COLORS[event.type] || '#FF6B35'
