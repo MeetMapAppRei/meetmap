@@ -24,15 +24,21 @@ export function buildEventLocationQuery(event) {
   return ''
 }
 
-/** Google Maps link for "Directions" — prefers pinned coordinates, else full address. */
+/**
+ * Google Maps link for "Directions".
+ * Prefer a full text address (Google resolves better than our geocoded lat/lng).
+ * Fall back to pinned coordinates only when there is no usable address text.
+ */
 export function getDirectionsUrl(event) {
   if (!event) return ''
+  const query = buildEventLocationQuery(event)
+  if (query) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+  }
   const lat = parseFloat(event.lat)
   const lng = parseFloat(event.lng)
   if (Number.isFinite(lat) && Number.isFinite(lng)) {
     return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
   }
-  const query = buildEventLocationQuery(event)
-  if (!query) return ''
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+  return ''
 }
