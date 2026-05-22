@@ -14,11 +14,25 @@
     },
     "api/storage-health.js": {
       "maxDuration": 10
+    },
+    "api/privacy-policy.js": {
+      "maxDuration": 10
+    },
+    "api/delete-account.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [
     {
-      "source": "/((?!api/)(?!privacy-policy\\.html$)(?!delete-account\\.html$).*)",
+      "source": "/privacy-policy.html",
+      "destination": "/api/privacy-policy"
+    },
+    {
+      "source": "/delete-account.html",
+      "destination": "/api/delete-account"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
