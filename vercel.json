@@ -16,5 +16,10 @@
       "maxDuration": 10
     }
   },
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/((?!api/)(?!privacy-policy\\.html$)(?!delete-account\\.html$).*)",
+      "destination": "/index.html"
+    }
+  ]
 }
