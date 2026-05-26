@@ -25,11 +25,12 @@ Keep **meetmap** and **meetmap-desktop** aligned via GitHub. Cursor does not syn
 
 ## Daily workflow
 
-| When                                | Command                                                   |
-| ----------------------------------- | --------------------------------------------------------- |
-| **Sit down at this machine**        | `cd ~/Documents/meetmap && npm run sync:pull`             |
-| **Done for the day / switching PC** | Commit in each repo you changed, then `npm run sync:push` |
-| **Check both repos**                | `npm run sync:status`                                     |
+| When                                | Command                                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------- |
+| **Sit down at this machine (Mac)**  | Open meetmap in Cursor (auto `mac:arrival`) — see [MAC_ARRIVAL.md](../MAC_ARRIVAL.md) |
+| **Sit down at this machine (Win)**  | `cd ~/Documents/meetmap && npm run sync:pull`                                         |
+| **Done for the day / switching PC** | Commit in each repo you changed, then `npm run sync:push`                             |
+| **Check both repos**                | `npm run sync:status`                                                                 |
 
 From **meetmap-desktop** you can also run `npm run sync:pull` (delegates to meetmap).
 
@@ -44,8 +45,13 @@ From **meetmap-desktop** you can also run `npm run sync:pull` (delegates to meet
 - Uncommitted files
 - `.env` and local secrets (never commit)
 
+## Mac quick start
+
+See **[MAC_ARRIVAL.md](../MAC_ARRIVAL.md)**. Opening the repo in Cursor runs sync automatically; allow **automatic tasks** once when prompted.
+
 ## Troubleshooting
 
+- **`ENOENT` / `MeetMap` / no package.json:** folder is not a full clone — use lowercase `~/Documents/meetmap` and `git clone` (see MAC_ARRIVAL.md).
 - **Pull skipped (uncommitted changes):** commit or `git stash`, then pull again.
 - **Push rejected:** run `npm run sync:pull`, resolve conflicts, then push.
 - **Desktop repo not found:** ensure `meetmap-desktop/meetmap-desktop` sits next to `meetmap` under Documents.

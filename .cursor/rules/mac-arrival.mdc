@@ -1,0 +1,42 @@
+---
+description: Mac — auto pull + npm ci at every Cursor session start (no manual commands)
+alwaysApply: true
+---
+
+# Mac arrival (automatic)
+
+The user switches between **Windows** and **Mac**. On Mac they must **not** copy terminal commands from the PC.
+
+## Automatic at session start (required)
+
+When **all** of the following are true:
+
+- Workspace path is on macOS (`/Users/...`), **or** the user is clearly on a Mac
+- You are in the **meetmap** repo (has `package.json` at workspace root)
+- This is the **start** of a coding session (before edits, unless the user only asked a read-only question)
+- The user did **not** say **don't sync**, **skip pull**, or **no sync**
+
+Then **immediately** run from meetmap root:
+
+```bash
+npm run mac:arrival
+```
+
+Report briefly: success, or what failed (dirty tree, missing clone, etc.). Do **not** ask them to paste `git pull` / `npm ci` themselves first.
+
+If they only sent a greeting or "I'm on my Mac", still run `mac:arrival` once, then answer.
+
+## Manual trigger
+
+User can say **`I'm on my Mac`** anytime to re-run sync.
+
+## Common Mac paths
+
+| Layout | meetmap root |
+|--------|----------------|
+| Standard | `~/Documents/meetmap` |
+| Nested (OK) | `~/Documents/MeetMap/meetmap` |
+
+meetmap-desktop is resolved automatically (sibling under `~/Documents`).
+
+See `MAC_ARRIVAL.md`.

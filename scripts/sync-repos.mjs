@@ -10,20 +10,20 @@
 
 import { spawnSync } from 'child_process'
 import { existsSync } from 'fs'
-import { homedir, platform } from 'os'
+import { platform } from 'os'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
+import { resolveDesktopDir } from './resolve-desktop-dir.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const MEETMAP_ROOT = join(__dirname, '..')
 
-const REPOS = [
-  { name: 'meetmap', dir: MEETMAP_ROOT },
-  {
-    name: 'meetmap-desktop',
-    dir: join(MEETMAP_ROOT, '..', 'meetmap-desktop', 'meetmap-desktop'),
-  },
-]
+function buildRepos() {
+  const repos = [{ name: 'meetmap', dir: MEETMAP_ROOT }]
+  const desktopDir = resolveDesktopDir(MEETMAP_ROOT)
+  if (desktopDir) repos.push({ name: 'meetmap-desktop', dir: desktopDir })
+  return repos
+}
 
 function git(cwd, args) {
   const r = spawnSync('git', args, {
@@ -40,7 +40,7 @@ function git(cwd, args) {
 
 function resolveRepos() {
   const resolved = []
-  for (const repo of REPOS) {
+  for (const repo of buildRepos()) {
     if (!existsSync(join(repo.dir, '.git'))) {
       console.warn(`[skip] ${repo.name}: not a git repo at ${repo.dir}`)
       continue

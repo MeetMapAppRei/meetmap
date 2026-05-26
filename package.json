@@ -20,6 +20,7 @@
     "cap:sync": "npm run build:mobile && npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios",
+    "mac:arrival": "node scripts/mac-arrival.mjs",
     "sync:pull": "node scripts/sync-repos.mjs pull",
     "sync:push": "node scripts/sync-repos.mjs push",
     "sync:status": "node scripts/sync-repos.mjs status",

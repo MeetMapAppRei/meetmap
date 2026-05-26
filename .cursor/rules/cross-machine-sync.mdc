@@ -12,16 +12,19 @@ The user develops on **Windows** and **Mac**. GitHub is the source of truth for 
 | Machine | meetmap | meetmap-desktop (Vite root) |
 |---------|---------|------------------------------|
 | Windows | `C:\Users\areil\Documents\meetmap` | `C:\Users\areil\Documents\meetmap-desktop\meetmap-desktop` |
-| Mac | `~/Documents/meetmap` | `~/Documents/meetmap-desktop/meetmap-desktop` |
+| Mac | `~/Documents/meetmap` or `~/Documents/MeetMap/meetmap` | `~/Documents/meetmap-desktop/meetmap-desktop` |
 
 Use the same **Documents** layout on both machines when possible.
 
 ## Agent: start of session
 
-At the **start of a coding session** (first meaningful work in meetmap or meetmap-desktop), unless the user said not to sync:
+Unless the user said **don't sync** / **skip pull**:
 
-1. From **meetmap** root, run: `npm run sync:pull`
-2. If pull fails (conflicts, dirty tree), report clearly and stop before editing until resolved.
+**On Mac** (`/Users/...` workspace): from **meetmap** root, run **`npm run mac:arrival`** automatically at session start (pull + `npm ci` + desktop). See `.cursor/rules/mac-arrival.mdc` — do not wait for the user to ask.
+
+**On Windows**: from **meetmap** root, run: `npm run sync:pull`
+
+If pull fails (conflicts, dirty tree), report clearly and stop before editing until resolved.
 
 ## Agent: end of session / switching machines
 
@@ -43,12 +46,12 @@ Do **not** push secrets (`.env`, `*.json` service account keys, `release/*.aab`)
 
 ## Automatic on folder open
 
-Opening the **meetmap** folder or **Desktop-projects** workspace can run `sync:pull` via `.vscode/tasks.json`. The user may need to allow **automatic tasks** once in Cursor/VS Code.
+Opening **meetmap** runs **`npm run mac:arrival`** on Mac (or no-ops on Windows) via `.vscode/tasks.json`. Enable **Allow Automatic Tasks** once in Cursor when prompted (`task.allowAutomaticTasks` is `on` in workspace settings).
 
 ## Manual checklist (user)
 
 **Leaving a machine:** commit → `npm run sync:push` → verify `npm run sync:status` is clean.
 
-**Arriving on the other machine:** `npm run sync:pull` → hard refresh findcarmeets.com if desktop changed.
+**Arriving on the other machine:** On Mac, run `npm run mac:arrival` or tell Cursor **`I'm on my Mac`** (see `MAC_ARRIVAL.md`). On Windows, `npm run sync:pull` then `npm ci` if needed. Hard refresh findcarmeets.com if desktop changed.
 
 See `docs/CROSS_MACHINE_SYNC.md` for setup on a new Mac.
