@@ -1,0 +1,52 @@
+---
+description: Repo roots and folder map — do not ask the user for these paths
+alwaysApply: true
+---
+
+# Workspaces and paths
+
+## Repository roots
+
+Use the same **Documents** layout on **Windows** and **Mac** so `npm run sync:pull` finds both repos.
+
+| Workspace | Windows | Mac |
+|-----------|---------|-----|
+| **Meet Map (main app)** | `C:\Users\areil\Documents\meetmap` | `~/Documents/meetmap` |
+| **Meet Map Desktop (Vite root)** | `C:\Users\areil\Documents\meetmap-desktop\meetmap-desktop` | `~/Documents/meetmap-desktop/meetmap-desktop` |
+
+Other Windows-only paths below live under **`C:\Users\areil\Documents\`** unless noted.
+
+| Workspace | Absolute path |
+|-----------|----------------|
+| **Yard Sale app (yard sale map)** | `C:\Users\areil\Documents\yard-sale-map` |
+| **Debate Arena** | `C:\Users\areil\Documents\debate-arena` |
+| **Debate Arena v2** | `C:\Users\areil\Documents\debate-arena-v2` |
+| **Car Meet App** (nested meetmap snapshot) | `C:\Users\areil\Documents\Car Meet App` |
+| **findcarmeets stickers** (assets / sheets) | `C:\Users\areil\Documents\findcarmeets-stickers` |
+| **Project zips + misc exports** | `C:\Users\areil\Documents\project-archives` |
+| **Multi-root Cursor workspace file** | `C:\Users\areil\Documents\Desktop-projects.code-workspace` |
+
+Assume all CLI commands (`npm`, `vercel`, `npx cap`) run from **`meetmap`** unless the task names another repo or desktop-only work.
+
+## Yard Sale app
+
+When the user mentions the **yard sale app**, **yard sale map**, **yard-sale-map**, or similar, they mean the project at **`C:\Users\areil\Documents\yard-sale-map`**, not `meetmap`. Use that folder for reads, edits, searches, and terminal commands for those tasks. If both apps are relevant, say which repo each change targets.
+
+## Folder map (`meetmap`)
+
+| Area | Path |
+|------|------|
+| Frontend (React + Vite) | `src/` |
+| Vercel serverless API | `api/*.js` |
+| Android (Capacitor) | `android/` |
+| SQL / migrations | `sql/`, `supabase/` |
+| Scripts | `scripts/` |
+| Build output | `dist/` (local only; not committed) |
+
+When the user says “this repo” or “the project,” they mean **`meetmap`** unless they name another folder in the table above.
+
+## Debate / Car Meet / stickers
+
+- **debate-arena** or **debate-arena-v2** → use the matching **Documents** path; **v2** nests `debate-arena\package.json` inside.
+- **Car Meet App** → older/sandbox tree; inner app may live under `meetmap-app\meetmap\`.
+- **findcarmeets-stickers** → print-ready **PDF/PNG** assets, not the web app.

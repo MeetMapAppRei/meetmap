@@ -1,0 +1,39 @@
+---
+description: Mirror Documents dev projects to D:\Backups when D: is available
+alwaysApply: true
+---
+
+# External drive backups (Windows)
+
+## When to back up
+
+If **`D:\`** exists, is writable, and looks like the user’s external disk (volume label **External** when queryable), treat backups as expected—not optional—for **meaningful work** (multi-file edits, refactors, dependency or native project changes, or anything the user could not trivially redo). After such work, **run an incremental backup** without being asked, unless the user declined backups for this session.
+
+If **`D:\`** is missing or not writable, say the external drive does not appear connected and **do not** fail the task; skip backup.
+
+## Canonical sources → destinations
+
+| Project | Source (edit here) | Backup folder on `D:\` |
+|---------|-------------------|-------------------------|
+| Meet Map | `C:\Users\areil\Documents\meetmap` | `D:\Backups\meetmap` |
+| Yard sale map | `C:\Users\areil\Documents\yard-sale-map` | `D:\Backups\yard-sale-map` |
+| Meet Map Desktop (whole tree) | `C:\Users\areil\Documents\meetmap-desktop` | `D:\Backups\meetmap-desktop` |
+| Debate Arena | `C:\Users\areil\Documents\debate-arena` | `D:\Backups\debate-arena` |
+| Debate Arena v2 | `C:\Users\areil\Documents\debate-arena-v2` | `D:\Backups\debate-arena-v2` |
+| Car Meet App | `C:\Users\areil\Documents\Car Meet App` | `D:\Backups\Car Meet App` |
+| findcarmeets stickers | `C:\Users\areil\Documents\findcarmeets-stickers` | `D:\Backups\findcarmeets-stickers` |
+| Zips / exports | `C:\Users\areil\Documents\project-archives` | `D:\Backups\project-archives` |
+
+## Command (PowerShell)
+
+Use **robocopy** (handles large trees; exit codes **0–7** are success):
+
+```powershell
+robocopy "C:\Users\areil\Documents\meetmap" "D:\Backups\meetmap" /E /COPY:DAT /R:2 /W:3 /MT:8 /NFL /NDL /NJH /NJS
+```
+
+Repeat with the other source/destination pairs when those trees were changed. Prefer **incremental** runs (same flags); do not delete backup roots unless the user explicitly asks. Paths with spaces (e.g. **Car Meet App**) must stay quoted in PowerShell.
+
+## If paths or drive letter change
+
+Update **project-workspaces** and this file together, or ask the user once for the new letter or folder names.

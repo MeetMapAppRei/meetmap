@@ -2,8 +2,10 @@
 .env.migrate
 .env.local
 
-# Cursor (local editor config; keep out of git)
-.cursor/
+# Cursor — sync agent rules across Mac/Windows; ignore other local Cursor files
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 
 node_modules/
 dist/

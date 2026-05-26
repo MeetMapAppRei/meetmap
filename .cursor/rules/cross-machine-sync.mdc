@@ -1,0 +1,54 @@
+---
+description: Pull/push meetmap + meetmap-desktop when switching Mac ↔ Windows
+alwaysApply: true
+---
+
+# Cross-machine sync (Mac ↔ Windows)
+
+The user develops on **Windows** and **Mac**. GitHub is the source of truth for **meetmap** and **meetmap-desktop**. Cursor does not sync chats or uncommitted code between machines.
+
+## Repo paths
+
+| Machine | meetmap | meetmap-desktop (Vite root) |
+|---------|---------|------------------------------|
+| Windows | `C:\Users\areil\Documents\meetmap` | `C:\Users\areil\Documents\meetmap-desktop\meetmap-desktop` |
+| Mac | `~/Documents/meetmap` | `~/Documents/meetmap-desktop/meetmap-desktop` |
+
+Use the same **Documents** layout on both machines when possible.
+
+## Agent: start of session
+
+At the **start of a coding session** (first meaningful work in meetmap or meetmap-desktop), unless the user said not to sync:
+
+1. From **meetmap** root, run: `npm run sync:pull`
+2. If pull fails (conflicts, dirty tree), report clearly and stop before editing until resolved.
+
+## Agent: end of session / switching machines
+
+When the user says they are **done**, **switching computers**, **heading to the Mac/PC**, or finishes **meaningful multi-file work**:
+
+1. Remind them both repos must be pushed before switching.
+2. If they want sync handled now and changes are **already committed**, run: `npm run sync:push`
+3. If `sync:push` fails due to uncommitted files, list repos and ask whether to commit (only commit when they explicitly ask).
+
+Do **not** push secrets (`.env`, `*.json` service account keys, `release/*.aab`).
+
+## Commands (meetmap root)
+
+| Command | Purpose |
+|---------|---------|
+| `npm run sync:pull` | Fetch + pull **both** repos (skips dirty repos) |
+| `npm run sync:push` | Push **both** repos (requires clean tree + commits) |
+| `npm run sync:status` | Show clean/dirty and ahead/behind for both |
+
+## Automatic on folder open
+
+Opening the **meetmap** folder or **Desktop-projects** workspace can run `sync:pull` via `.vscode/tasks.json`. The user may need to allow **automatic tasks** once in Cursor/VS Code.
+
+## Manual checklist (user)
+
+**Leaving a machine:** commit → `npm run sync:push` → verify `npm run sync:status` is clean.
+
+**Arriving on the other machine:** `npm run sync:pull` → hard refresh findcarmeets.com if desktop changed.
+
+See `docs/CROSS_MACHINE_SYNC.md` for setup on a new Mac.
