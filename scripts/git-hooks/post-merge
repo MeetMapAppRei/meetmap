@@ -1,0 +1,5 @@
+#!/bin/sh
+# Reminder after git pull / merge (cross-machine workflow).
+echo ""
+echo "[meetmap] Pull complete. On your other machine, run: npm run sync:pull"
+echo ""

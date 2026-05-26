@@ -19,11 +19,16 @@
     "migrate:images:r2": "node scripts/migrate-supabase-images-to-r2.mjs",
     "cap:sync": "npm run build:mobile && npx cap sync",
     "cap:open:android": "npx cap open android",
-    "cap:open:ios": "npx cap open ios"
+    "cap:open:ios": "npx cap open ios",
+    "sync:pull": "node scripts/sync-repos.mjs pull",
+    "sync:push": "node scripts/sync-repos.mjs push",
+    "sync:status": "node scripts/sync-repos.mjs status",
+    "sync:hooks": "node scripts/install-git-hooks.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.750.0",
     "@aws-sdk/s3-request-presigner": "^3.750.0",
+    "@capacitor/app": "^6.0.3",
     "@capacitor/core": "^6.2.0",
     "@capacitor/dialog": "^6.0.3",
     "@capacitor/push-notifications": "^6.0.2",
