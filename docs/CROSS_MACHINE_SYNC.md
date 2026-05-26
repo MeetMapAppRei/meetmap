@@ -25,11 +25,11 @@ Keep **meetmap** and **meetmap-desktop** aligned via GitHub. Cursor does not syn
 
 ## Daily workflow
 
-| When | Command |
-|------|---------|
-| **Sit down at this machine** | `cd ~/Documents/meetmap && npm run sync:pull` |
+| When                                | Command                                                   |
+| ----------------------------------- | --------------------------------------------------------- |
+| **Sit down at this machine**        | `cd ~/Documents/meetmap && npm run sync:pull`             |
 | **Done for the day / switching PC** | Commit in each repo you changed, then `npm run sync:push` |
-| **Check both repos** | `npm run sync:status` |
+| **Check both repos**                | `npm run sync:status`                                     |
 
 From **meetmap-desktop** you can also run `npm run sync:pull` (delegates to meetmap).
 
