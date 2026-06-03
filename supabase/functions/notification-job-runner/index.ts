@@ -35,11 +35,14 @@ async function dispatchJob(job: {
           statusLabel: String(job.payload?.statusLabel || 'Updated'),
         }
 
+  // Supabase Edge Functions require a valid JWT at the gateway even for server-to-server calls.
+  const gatewayBearer = SAVED_EVENT_PUSH_BEARER || SUPABASE_SERVICE_ROLE_KEY
   const res = await fetch(SAVED_EVENT_PUSH_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(SAVED_EVENT_PUSH_BEARER ? { Authorization: `Bearer ${SAVED_EVENT_PUSH_BEARER}` } : {}),
+      Authorization: `Bearer ${gatewayBearer}`,
+      apikey: gatewayBearer,
     },
     body: JSON.stringify(body),
   })

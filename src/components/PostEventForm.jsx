@@ -131,7 +131,8 @@ const S = {
     border: '1px solid #1A1A1A',
     maxHeight: '92vh',
     overflowY: 'auto',
-    padding: '24px 20px 48px',
+    // Leave room for sticky submit bar.
+    padding: '24px 20px 14px',
     animation: 'slideUp 0.3s ease',
   },
   label: {
@@ -169,6 +170,16 @@ const S = {
     marginBottom: 14,
     colorScheme: 'dark',
     appearance: 'none',
+  },
+  stickySubmitBar: {
+    position: 'sticky',
+    bottom: 0,
+    zIndex: 5,
+    paddingTop: 12,
+    paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+    // Keep button readable over scrolled content.
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.92) 35%, rgba(0,0,0,0.98))',
+    backdropFilter: 'blur(6px)',
   },
 }
 
@@ -499,6 +510,12 @@ export default function PostEventForm({ onClose, onPosted }) {
   const photoBorder = isLight ? '#E5E5E5' : '#222'
   const photoBg = isLight ? '#F7F7F7' : '#111'
   const geocodeText = isLight ? '#666' : '#555'
+  const stickySubmitStyle = {
+    ...S.stickySubmitBar,
+    background: isLight
+      ? 'linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.92) 35%, rgba(255,255,255,0.98))'
+      : S.stickySubmitBar.background,
+  }
 
   const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }))
 
@@ -727,7 +744,20 @@ export default function PostEventForm({ onClose, onPosted }) {
     } catch (e) {
       console.error('PostEventForm submit failed', { stage, correlationId, err: e })
       const isConn = isTransientNetworkError(e)
-      setError(userMessageForPostSubmitError(stage, e, correlationId))
+      const baseMessage = userMessageForPostSubmitError(stage, e, correlationId)
+      if (String(e?.message || '').includes('An event with the same title, date, and city')) {
+        const safeTitle = String(form.title || '').trim()
+        const safeDate = String(form.date || '').trim()
+        const safeCity = String(form.city || '').trim()
+        const summary = [safeTitle ? `“${safeTitle}”` : '', safeDate || '', safeCity || '']
+          .filter(Boolean)
+          .join(' — ')
+        setError(
+          `${baseMessage}${summary ? `\n\nDetected as: ${summary}` : ''}\n\nIf this is a different event at the same location, tweak the Event Name slightly (ex: add the venue name) and try again — or edit the existing listing instead.`,
+        )
+      } else {
+        setError(baseMessage)
+      }
       void reportSubmitDiagnostic({
         stage,
         correlationId,
@@ -1189,25 +1219,27 @@ export default function PostEventForm({ onClose, onPosted }) {
           style={{ ...inputStyle, resize: 'none', marginBottom: 20 }}
         />
 
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={loading || scanning}
-          style={{
-            width: '100%',
-            background: loading || scanning ? (isLight ? '#E5E5E5' : '#333') : '#FF6B35',
-            color: loading || scanning ? (isLight ? '#666' : '#666') : '#0A0A0A',
-            border: 'none',
-            borderRadius: 10,
-            padding: 14,
-            fontFamily: "'Bebas Neue', sans-serif",
-            fontSize: 20,
-            letterSpacing: 2,
-            cursor: loading || scanning ? 'default' : 'pointer',
-          }}
-        >
-          {loading ? 'POSTING...' : scanning ? 'READING FLYER...' : 'DROP THE PIN 📍'}
-        </button>
+        <div style={stickySubmitStyle}>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading || scanning}
+            style={{
+              width: '100%',
+              background: loading || scanning ? (isLight ? '#E5E5E5' : '#333') : '#FF6B35',
+              color: loading || scanning ? (isLight ? '#666' : '#666') : '#0A0A0A',
+              border: 'none',
+              borderRadius: 10,
+              padding: 14,
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 20,
+              letterSpacing: 2,
+              cursor: loading || scanning ? 'default' : 'pointer',
+            }}
+          >
+            {loading ? 'POSTING...' : scanning ? 'READING FLYER...' : 'DROP THE PIN 📍'}
+          </button>
+        </div>
       </div>
     </div>
   )

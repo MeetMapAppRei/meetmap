@@ -34,8 +34,8 @@ This phase enables:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `SAVED_EVENT_PUSH_URL` (URL of deployed `saved-event-push` function)
-- `SAVED_EVENT_PUSH_BEARER` (optional bearer token if you protect the sender endpoint)
+- `SAVED_EVENT_PUSH_URL` (**required**) — URL of deployed `saved-event-push`, e.g. `https://<project-ref>.supabase.co/functions/v1/saved-event-push`
+- `SAVED_EVENT_PUSH_BEARER` (optional extra auth if you set `SAVED_EVENT_PUSH_BEARER` on `saved-event-push`; otherwise the runner uses the service role JWT for gateway auth)
 
 ## Suggested deployment order
 
@@ -68,12 +68,16 @@ Users edit these in the app via **Alerts** → **Alert settings** (logged-in acc
 
 ## Scheduling
 
-Use Supabase Scheduled Functions (or your cron platform) to call:
+Production uses **pg_cron + pg_net** (see `sql/push-notifications-cron.sql`):
 
-- `notification-job-runner` every 1-2 minutes
-- `saved-event-push` with `{"mode":"reminder_tick"}` every 5 minutes
+1. Enable extensions (`pg_cron`, `pg_net`) if not already enabled.
+2. Store `meetmap_project_url` and `meetmap_publishable_key` in **Vault** (anon JWT for HTTP auth).
+3. Set edge secret `SAVED_EVENT_PUSH_URL` on the Supabase project.
+4. Run `sql/push-notifications-cron.sql` to schedule:
+   - `notification-job-runner` every 2 minutes
+   - `saved-event-push` `reminder_tick` every 5 minutes
 
-Example body for reminders:
+Example body for manual reminder test:
 
 ```json
 { "mode": "reminder_tick" }

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
 import { AuthProvider } from './lib/AuthContext'
 import { useAuth } from './lib/useAuth'
 import {
@@ -379,6 +381,33 @@ function AppInner() {
 
     window.addEventListener('popstate', onPopstate)
     return () => window.removeEventListener('popstate', onPopstate)
+  }, [closeSelectedEvent])
+
+  // Capacitor Android: hardware back does not reliably fire popstate; handle it explicitly.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+
+    let listenerHandle
+    let cancelled = false
+
+    CapacitorApp.addListener('backButton', () => {
+      if (selectedEventOpenRef.current) {
+        closeSelectedEvent()
+        return
+      }
+      CapacitorApp.exitApp()
+    }).then((handle) => {
+      if (cancelled) {
+        handle.remove()
+        return
+      }
+      listenerHandle = handle
+    })
+
+    return () => {
+      cancelled = true
+      listenerHandle?.remove()
+    }
   }, [closeSelectedEvent])
 
   const loadEvents = useCallback(async () => {

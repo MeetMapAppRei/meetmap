@@ -52,12 +52,22 @@ export const initializeNativePush = async ({
     await PushNotifications.removeAllListeners()
   } catch {}
 
+  let resolveRegistration
+  let rejectRegistration
+  const registrationResult = new Promise((resolve, reject) => {
+    resolveRegistration = resolve
+    rejectRegistration = reject
+  })
+
   PushNotifications.addListener('registration', (token) => {
-    if (typeof onToken === 'function') onToken(token?.value || '')
+    const tokenValue = token?.value || ''
+    if (typeof onToken === 'function') onToken(tokenValue)
+    resolveRegistration(tokenValue)
   })
 
   PushNotifications.addListener('registrationError', (err) => {
     if (typeof onRegistrationError === 'function') onRegistrationError(err)
+    rejectRegistration(err instanceof Error ? err : new Error(String(err)))
   })
 
   PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
@@ -85,12 +95,13 @@ export const initializeNativePush = async ({
   }
 
   try {
-    await withTimeout(
-      PushNotifications.register(),
+    await PushNotifications.register()
+    const token = await withTimeout(
+      registrationResult,
       PUSH_STEP_TIMEOUT_MS,
-      'Timed out registering for push (check Google Play services / Firebase on this device).',
+      'Timed out waiting for push token (check Google Play services / Firebase on this device).',
     )
-    return { enabled: true }
+    return { enabled: true, token }
   } catch (e) {
     if (typeof onRegistrationError === 'function') onRegistrationError(e)
     const msg = e?.message || String(e)
