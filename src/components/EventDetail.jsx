@@ -2,11 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import {
   fetchComments,
   postComment,
-  getEventRsvpStatus,
-  setEventRsvp,
-  toggleAttendance,
-  getAttendanceStatus,
-  fetchEventAttendeeCount,
   updateEvent,
   uploadEventPhoto,
   supabase,
@@ -490,10 +485,6 @@ export default function EventDetail({
   const [comments, setComments] = useState([])
   const [commentText, setCommentText] = useState('')
   const [showAllComments, setShowAllComments] = useState(false)
-  const [rsvpStatus, setRsvpStatus] = useState(null)
-  const [interestedCount, setInterestedCount] = useState(initialEvent.interested_count || 0)
-  const [goingCount, setGoingCount] = useState(initialEvent.attendee_count || 0)
-  const [isGoing, setIsGoing] = useState(false)
   const [posting, setPosting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -553,16 +544,7 @@ export default function EventDetail({
 
   useEffect(() => {
     fetchComments(event.id).then(setComments).catch(console.error)
-    if (user) {
-      getEventRsvpStatus(event.id, user.id).then(setRsvpStatus)
-      getAttendanceStatus(event.id, user.id)
-        .then(setIsGoing)
-        .catch(() => setIsGoing(false))
-    }
-    fetchEventAttendeeCount(event.id)
-      .then(setGoingCount)
-      .catch(() => {})
-  }, [event.id, user])
+  }, [event.id])
 
   useEffect(() => {
     let cancelled = false
@@ -589,31 +571,6 @@ export default function EventDetail({
     const t = setTimeout(() => setToast(''), 2200)
     return () => clearTimeout(t)
   }, [toast])
-
-  const handleToggleGoing = async () => {
-    if (!user) return onAuthNeeded()
-    try {
-      const next = await toggleAttendance(event.id, user.id)
-      setIsGoing(next)
-      const nextCount = await fetchEventAttendeeCount(event.id).catch(() => null)
-      if (typeof nextCount === 'number') setGoingCount(nextCount)
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  const handleSetInterested = async () => {
-    if (!user) return onAuthNeeded()
-    const current = rsvpStatus === 'interested'
-    const desired = current ? null : 'interested'
-    try {
-      await setEventRsvp(event.id, user.id, desired)
-      setRsvpStatus(desired)
-      setInterestedCount((prev) => (current ? Math.max(0, prev - 1) : prev + 1))
-    } catch (e) {
-      console.error(e)
-    }
-  }
 
   const handleComment = async () => {
     if (!user) return onAuthNeeded()
@@ -720,13 +677,6 @@ export default function EventDetail({
       setPostingUpdate(false)
     }
   }
-
-  // Local day boundary to match feed filtering (avoid UTC rollover hiding "today" events).
-  const now = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate(),
-  ).padStart(2, '0')}`
-  const isPast = event.date < today
 
   const overlayBg = isLight ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.92)'
   const panelBg = isLight ? '#FFFFFF' : '#0F0F0F'
@@ -1166,46 +1116,6 @@ export default function EventDetail({
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-            {!isPast && (
-              <>
-                <button
-                  onClick={handleToggleGoing}
-                  style={{
-                    flex: 1.4,
-                    background: color,
-                    color: '#0A0A0A',
-                    border: `1px solid ${color}`,
-                    borderRadius: 10,
-                    padding: '12px',
-                    fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 16,
-                    letterSpacing: 1.2,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {isGoing ? `✓ You're going · ${goingCount} going` : `GOING · ${goingCount} going`}
-                </button>
-                <button
-                  onClick={handleSetInterested}
-                  style={{
-                    flex: 1.2,
-                    background: rsvpStatus === 'interested' ? '#261D08' : shareBg,
-                    color: rsvpStatus === 'interested' ? '#FFD700' : shareText,
-                    border: `1px solid ${rsvpStatus === 'interested' ? '#FFD700' : shareBorder}`,
-                    borderRadius: 10,
-                    padding: '12px',
-                    fontFamily: "'Bebas Neue', sans-serif",
-                    fontSize: 15,
-                    letterSpacing: 1,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {rsvpStatus === 'interested'
-                    ? `★ INTERESTED · ${interestedCount}`
-                    : `INTERESTED · ${interestedCount}`}
-                </button>
-              </>
-            )}
             <button
               onClick={onToggleSaved}
               style={{

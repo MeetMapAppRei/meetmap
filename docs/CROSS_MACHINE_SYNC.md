@@ -36,8 +36,20 @@ From **meetmap-desktop** you can also run `npm run sync:pull` (delegates to meet
 
 ## What syncs automatically
 
-- **On folder open:** `npm run sync:pull` (if automatic tasks are enabled)
+- **On folder open (Windows):** `npm run sync:pull` (if automatic tasks are enabled)
+- **On folder open (Mac):** `npm run mac:arrival` = pull + `npm ci` + **`cap:sync`** (updates **iOS** and **Android** native projects from the shared web app)
 - **Cursor agent:** rules in `.cursor/rules/cross-machine-sync.mdc` tell the agent to pull at session start and push when you finish
+
+## Native apps (iOS + Android)
+
+Both use the **same** React bundle as mobile web (`npm run build:mobile` → `npx cap sync`).
+
+| Machine     | When UI changes land on device                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| **Mac**     | Automatic on `mac:arrival`, or `npm run cap:sync`, then Xcode (`npm run cap:open:ios`) or Android Studio |
+| **Windows** | `npm run cap:sync` before `npm run build:android` / Play upload                                          |
+
+**Desktop** (`findcarmeets.com`) and **mobile web** (Vercel) deploy separately via `npx vercel deploy --prod`.
 
 ## What does not sync
 

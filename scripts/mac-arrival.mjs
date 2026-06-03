@@ -75,4 +75,19 @@ if (desktop && existsSync(join(desktop, 'package.json'))) {
   )
 }
 
-console.log('\n[mac:arrival] Done — repos pulled and dependencies installed.\n')
+const iosApp = join(root, 'ios', 'App')
+if (existsSync(iosApp)) {
+  header('Syncing web bundle → iOS + Android (Capacitor)...')
+  if (!run('npm', ['run', 'cap:sync'])) {
+    console.error(
+      '[mac:arrival] cap:sync failed — fix build errors, then run: npm run cap:sync\n' +
+        '  Open Xcode after a successful sync: npm run cap:open:ios',
+    )
+    process.exit(1)
+  }
+  console.log('[mac:arrival] Native projects updated. Xcode: npm run cap:open:ios')
+} else {
+  console.log('[mac:arrival] No ios/App — skipped Capacitor sync (clone full meetmap repo).')
+}
+
+console.log('\n[mac:arrival] Done — repos pulled, deps installed, native sync complete.\n')

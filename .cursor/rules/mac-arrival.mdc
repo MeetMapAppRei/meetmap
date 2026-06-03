@@ -39,4 +39,6 @@ User can say **`I'm on my Mac`** anytime to re-run sync.
 
 meetmap-desktop is resolved automatically (sibling under `~/Documents`).
 
+`mac:arrival` also runs **`npm run cap:sync`** so **iOS** and **Android** native projects get the latest web UI after a Windows pull. Report cap:sync failures clearly; suggest `npm run cap:open:ios` after success.
+
 See `MAC_ARRIVAL.md`.

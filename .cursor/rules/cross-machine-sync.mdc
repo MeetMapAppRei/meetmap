@@ -20,7 +20,7 @@ Use the same **Documents** layout on both machines when possible.
 
 Unless the user said **don't sync** / **skip pull**:
 
-**On Mac** (`/Users/...` workspace): from **meetmap** root, run **`npm run mac:arrival`** automatically at session start (pull + `npm ci` + desktop). See `.cursor/rules/mac-arrival.mdc` — do not wait for the user to ask.
+**On Mac** (`/Users/...` workspace): from **meetmap** root, run **`npm run mac:arrival`** automatically at session start (pull + `npm ci` + desktop + **`cap:sync`** for iOS/Android). See `.cursor/rules/mac-arrival.mdc` — do not wait for the user to ask.
 
 **On Windows**: from **meetmap** root, run: `npm run sync:pull`
 

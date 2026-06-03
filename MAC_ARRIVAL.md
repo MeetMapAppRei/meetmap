@@ -9,6 +9,7 @@ You do **not** need to run `git pull` or `npm ci` by hand each time.
 3. On folder open, the project runs **`npm run mac:arrival`**:
    - `git pull` for meetmap (+ meetmap-desktop if present)
    - `npm ci` in each repo
+   - **`npm run cap:sync`** — rebuilds the mobile web bundle and copies it into **`ios/`** and **`android/`** (same UI as mobile web; required after UI changes from Windows)
 
 The Cursor agent is also instructed to run the same at the **start of every chat** on Mac.
 
@@ -26,6 +27,16 @@ npm run mac:arrival
 ## Skip sync for one session
 
 Tell Cursor: **don't sync**
+
+## iOS app (after sync)
+
+When `cap:sync` succeeds, open the Xcode project and run on a device or simulator:
+
+```bash
+npm run cap:open:ios
+```
+
+Ship to TestFlight/App Store from Xcode when ready. UI changes from Windows only reach the iOS binary after **pull + mac:arrival** (or manual `npm run cap:sync` on the Mac).
 
 ## More detail
 

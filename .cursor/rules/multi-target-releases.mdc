@@ -5,16 +5,17 @@ alwaysApply: true
 
 # Multi-target release rule (Meet Map)
 
-Meet Map ships as **three targets** that must stay in sync:
+Meet Map ships as **four targets** that must stay in sync:
 
 - **Mobile web app**: `C:\Users\areil\Documents\meetmap` (Vercel alias `meetmap-gilt.vercel.app`)
 - **Desktop web app (findcarmeets.com)**: `C:\Users\areil\Documents\meetmap-desktop\meetmap-desktop` (Vercel alias `www.findcarmeets.com`)
 - **Android app**: Capacitor project under `meetmap/android` built from the same web bundle
+- **iOS app**: Capacitor project under `meetmap/ios` — on Mac, `npm run mac:arrival` or `npm run cap:sync` after pull; open with `npm run cap:open:ios`
 
 ## Hard rule
 
 If a change affects user-visible behavior or shared business logic, **do not ship it to only one target**.
-Apply an equivalent change to **mobile + desktop**, and ensure the **Android build path still works**.
+Apply an equivalent change to **mobile + desktop**, and run **`npm run cap:sync`** so **Android and iOS** native projects get the same bundle (Mac: automatic via `mac:arrival`).
 
 ## Release checklist (when the user implies "ship"/"done"/"live")
 
@@ -28,11 +29,10 @@ Apply an equivalent change to **mobile + desktop**, and ensure the **Android bui
   - Commit + push
   - Deploy: `npx vercel deploy --prod --yes` (must alias to `www.findcarmeets.com`)
 
-- **Android (Capacitor)**
-  - Sync web → native: `npm run cap:sync`
-  - If the change should be published to Google Play:
-    - Build AAB: `npm run build:android` (or `npm run build:android:nobump` when explicitly requested)
-    - Ensure `versionCode` was bumped if required
+- **Android + iOS (Capacitor)**
+  - Sync web → native: `npm run cap:sync` (Windows before Android release; Mac via `mac:arrival` or manual)
+  - **Android** — if publishing to Google Play: `npm run build:android` (or `build:android:nobump` when requested); bump `versionCode` if required
+  - **iOS** — on Mac after `cap:sync`: `npm run cap:open:ios`, archive/upload from Xcode
 
 ## Notes
 
