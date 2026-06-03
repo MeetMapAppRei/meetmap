@@ -1,5 +1,5 @@
 {
-  "appId": "com.meetmap.app",
+  "appId": "com.findcarmeets.app",
   "appName": "Meet Map",
   "webDir": "dist",
   "server": {
