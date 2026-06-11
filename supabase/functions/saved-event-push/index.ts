@@ -130,14 +130,31 @@ async function sendFcmV1(token: string, title: string, body: string, eventId: st
   return { ok: res.ok, status: res.status, payload }
 }
 
-async function getEventTitle(eventId: string) {
+type EventMeta = { title: string; date: string; time: string }
+
+async function getEventMeta(eventId: string): Promise<EventMeta | null> {
   const { data, error } = await supabase
     .from('events')
-    .select('title')
+    .select('title, date, time')
     .eq('id', eventId)
     .maybeSingle()
   if (error) throw error
-  return norm(data?.title) || 'Saved event'
+  if (!data?.date) return null
+  return {
+    title: norm(data.title) || 'Saved event',
+    date: String(data.date),
+    time: String(data.time || ''),
+  }
+}
+
+function isEventUpcoming(meta: EventMeta | null): boolean {
+  if (!meta?.date) return false
+  const today = new Date().toISOString().slice(0, 10)
+  if (meta.date < today) return false
+  const timePart = /^\d{2}:\d{2}/.test(meta.time) ? meta.time : '00:00'
+  const startMs = new Date(`${meta.date}T${timePart}`).getTime()
+  if (!Number.isFinite(startMs)) return meta.date >= today
+  return startMs > Date.now()
 }
 
 async function getRecipientsForEvent(eventId: string) {
@@ -220,7 +237,9 @@ async function markSent(userId: string, eventId: string, kind: string, dedupeKey
 async function notifySavedEventUpdate(req: NotifyRequest) {
   const eventId = norm(req.eventId)
   if (!eventId) return { sent: 0, skipped: 0 }
-  const eventTitle = await getEventTitle(eventId)
+  const meta = await getEventMeta(eventId)
+  if (!isEventUpcoming(meta)) return { sent: 0, skipped: 0 }
+  const eventTitle = meta?.title || 'Saved event'
   const message = norm(req.updateMessage) || 'The host posted a new update.'
   const recipients = await getRecipientsForEvent(eventId)
   let sent = 0
@@ -258,7 +277,9 @@ async function notifySavedEventUpdate(req: NotifyRequest) {
 async function notifySavedEventStatus(req: NotifyRequest) {
   const eventId = norm(req.eventId)
   if (!eventId) return { sent: 0, skipped: 0 }
-  const eventTitle = await getEventTitle(eventId)
+  const meta = await getEventMeta(eventId)
+  if (!isEventUpcoming(meta)) return { sent: 0, skipped: 0 }
+  const eventTitle = meta?.title || 'Saved event'
   const statusLabel = norm(req.statusLabel) || 'Updated'
   const recipients = await getRecipientsForEvent(eventId)
   let sent = 0

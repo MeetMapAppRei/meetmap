@@ -61,7 +61,14 @@ returns trigger
 language plpgsql
 security definer
 as $$
+declare
+  event_date date;
 begin
+  select e.date into event_date from public.events e where e.id = new.event_id;
+  if event_date is null or event_date < current_date then
+    return new;
+  end if;
+
   insert into public.notification_jobs(kind, event_id, payload)
   values (
     'event_update',
@@ -85,8 +92,14 @@ security definer
 as $$
 declare
   status_label text;
+  event_date date;
 begin
   if tg_op = 'UPDATE' and (old.status, old.status_note) is not distinct from (new.status, new.status_note) then
+    return new;
+  end if;
+
+  select e.date into event_date from public.events e where e.id = new.event_id;
+  if event_date is null or event_date < current_date then
     return new;
   end if;
 

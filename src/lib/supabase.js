@@ -339,6 +339,67 @@ export const fetchEvents = async (filters = {}) => {
   }
 }
 
+const enrichEventRows = async (rows) => {
+  if (!Array.isArray(rows) || rows.length === 0) return []
+  try {
+    const ids = rows.map((e) => e.id)
+    const statusMap = await fetchEventStatusMap(ids)
+    const updateMap = await fetchLatestEventUpdateMap(ids)
+    const rsvpMap = await fetchEventRsvpStatsMap(ids)
+    return rows.map((e) => ({
+      ...e,
+      status: statusMap[e.id]?.status || 'active',
+      status_note: statusMap[e.id]?.status_note || '',
+      latest_update_id: updateMap[e.id]?.latest_update_id || '',
+      latest_update_message: updateMap[e.id]?.latest_update_message || '',
+      latest_update_created_at: updateMap[e.id]?.latest_update_created_at || '',
+      interested_count: rsvpMap[e.id]?.interested_count || 0,
+      going_count: rsvpMap[e.id]?.going_count || 0,
+    }))
+  } catch {
+    return rows.map((e) => ({
+      ...e,
+      status: 'active',
+      status_note: '',
+      latest_update_id: '',
+      latest_update_message: '',
+      latest_update_created_at: '',
+      interested_count: 0,
+      going_count: e.event_attendees?.[0]?.count || e.attendee_count || 0,
+    }))
+  }
+}
+
+/** Load one event by id (includes past events). */
+export const fetchEventById = async (eventId) => {
+  const id = String(eventId || '').trim()
+  if (!id) return null
+  const { data, error } = await supabase
+    .from('events')
+    .select('*, profiles(username, avatar_url), event_attendees(count)')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const [enriched] = await enrichEventRows([data])
+  return enriched || null
+}
+
+/** Lightweight schedule lookup for notification guards. */
+export const fetchEventScheduleByIds = async (eventIds) => {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return {}
+  const ids = eventIds.filter(Boolean)
+  if (!ids.length) return {}
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, date, time, title')
+    .in('id', ids)
+  if (error) throw error
+  const map = {}
+  for (const row of data || []) map[row.id] = row
+  return map
+}
+
 export const createEvent = async (eventData, userId) => {
   const resolved = await tryResolveDuplicateBeforeInsert(eventData, userId)
   if (resolved) return resolved

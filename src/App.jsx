@@ -15,6 +15,8 @@ import {
   fetchSavedEventIds,
   setSavedEventStatus,
   upsertSavedEvents,
+  fetchEventById,
+  fetchEventScheduleByIds,
   fetchEventStatuses,
   fetchLatestEventUpdates,
   fetchEventReports,
@@ -53,6 +55,7 @@ import { geocodeAddress } from './lib/geocode'
 import { buildEventLocationQuery } from './lib/eventLocation'
 import { makeClientUuid } from './lib/clientUuid'
 import { appAlert } from './lib/appAlert'
+import { isEventUpcoming } from './lib/eventSchedule'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -60,9 +63,27 @@ const parseCsvEnv = (value) =>
     .map((v) => v.trim())
     .filter(Boolean)
 
-const openNotificationLink = async (action) => {
+const eventIdFromNotificationData = (data) => {
+  const direct = String(data?.event_id || '').trim()
+  if (direct) return direct
+  const url = String(data?.web_link || data?.deep_link || '').trim()
+  if (!url) return ''
+  try {
+    const parsed = new URL(url, window.location.origin)
+    return String(parsed.searchParams.get('event') || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+const openNotificationLink = async (action, openEventById) => {
   try {
     const data = action?.notification?.data || {}
+    const eventId = eventIdFromNotificationData(data)
+    if (eventId && openEventById) {
+      await openEventById(eventId)
+      return
+    }
     const url = String(data.web_link || data.deep_link || '').trim()
     if (!url) return
     window.location.href = url
@@ -248,6 +269,16 @@ function AppInner() {
   const selectedEventOpenRef = useRef(false)
   const eventCardHistoryPushedRef = useRef(false)
   const ignoreNextPopstateRef = useRef(false)
+  const openEventByIdRef = useRef(null)
+  const pendingSharedEventIdRef = useRef(
+    (() => {
+      try {
+        return String(new URLSearchParams(window.location.search).get('event') || '').trim()
+      } catch {
+        return ''
+      }
+    })(),
+  )
   const [showAuth, setShowAuth] = useState(false)
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
@@ -428,15 +459,41 @@ function AppInner() {
     loadEvents()
   }, [loadEvents])
 
-  // Check for shared event link on load
+  const openEventById = useCallback(
+    async (rawEventId) => {
+      const eventId = String(rawEventId || '').trim()
+      if (!eventId) return
+      const inList = events.find((e) => e.id === eventId)
+      if (inList) {
+        setSelectedEvent(inList)
+        return
+      }
+      try {
+        const event = await fetchEventById(eventId)
+        if (!event) return
+        setEvents((prev) => (prev.some((e) => e.id === event.id) ? prev : [event, ...prev]))
+        setSelectedEvent(event)
+      } catch (e) {
+        console.error('Failed to open event:', e)
+      }
+    },
+    [events],
+  )
+
+  openEventByIdRef.current = openEventById
+
+  // Shared links and notification deep links (?event=uuid)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const eventId = params.get('event')
-    if (eventId && events.length > 0) {
-      const found = events.find((e) => e.id === eventId)
-      if (found) setSelectedEvent(found)
-    }
-  }, [events])
+    const eventId = pendingSharedEventIdRef.current
+    if (!eventId) return
+    pendingSharedEventIdRef.current = ''
+    void openEventById(eventId)
+    try {
+      const next = new URL(window.location.href)
+      next.searchParams.delete('event')
+      window.history.replaceState({}, '', `${next.pathname}${next.search}`)
+    } catch {}
+  }, [openEventById])
 
   const handlePosted = (newEvent) => {
     setEvents((prev) => [newEvent, ...prev])
@@ -625,9 +682,7 @@ function AppInner() {
             if (token) setPushToken(token)
           },
           onNotificationTap: (action) => {
-            // FCM payload includes `web_link` (and optionally `deep_link`) in `data`.
-            // Opening the web link is the most reliable cross-device behavior.
-            void openNotificationLink(action)
+            void openNotificationLink(action, (id) => openEventByIdRef.current?.(id))
           },
           onRegistrationError: (error) => {
             console.error('Native push registration failed:', error)
@@ -863,7 +918,10 @@ function AppInner() {
 
     const checkUpdateChanges = async () => {
       try {
-        const updateMap = await fetchLatestEventUpdates(savedEventIds)
+        const [updateMap, scheduleMap] = await Promise.all([
+          fetchLatestEventUpdates(savedEventIds),
+          fetchEventScheduleByIds(savedEventIds),
+        ])
         let snapshot = {}
         let notified = {}
         try {
@@ -884,14 +942,18 @@ function AppInner() {
             ? `${row.latest_update_id || ''}|${row.latest_update_message || ''}|${row.latest_update_created_at || ''}`
             : ''
           const previous = snapshot[eventId] || ''
+          const schedule = scheduleMap[eventId]
+          const upcoming = schedule && isEventUpcoming(schedule)
 
           if (
+            upcoming &&
             hasBaseline &&
             signature &&
             previous !== signature &&
             nextNotified[eventId] !== signature
           ) {
-            const eventTitle = events.find((e) => e.id === eventId)?.title || 'Saved event'
+            const eventTitle =
+              events.find((e) => e.id === eventId)?.title || schedule?.title || 'Saved event'
             new window.Notification(`New host update: ${eventTitle}`, {
               body: row.latest_update_message || 'The host posted a new update.',
               icon: '/og-image.svg',
@@ -926,7 +988,10 @@ function AppInner() {
 
     const checkStatusChanges = async () => {
       try {
-        const statusMap = await fetchEventStatuses(savedEventIds)
+        const [statusMap, scheduleMap] = await Promise.all([
+          fetchEventStatuses(savedEventIds),
+          fetchEventScheduleByIds(savedEventIds),
+        ])
         let snapshot = {}
         let notified = {}
         try {
@@ -948,14 +1013,18 @@ function AppInner() {
           const updatedAt = row.updated_at || ''
           const signature = `${status}|${note}|${updatedAt}`
           const previous = snapshot[eventId]
+          const schedule = scheduleMap[eventId]
+          const upcoming = schedule && isEventUpcoming(schedule)
 
           if (
+            upcoming &&
             hasBaseline &&
             previous &&
             previous.signature !== signature &&
             nextNotified[eventId] !== signature
           ) {
-            const eventTitle = events.find((e) => e.id === eventId)?.title || 'Saved event'
+            const eventTitle =
+              events.find((e) => e.id === eventId)?.title || schedule?.title || 'Saved event'
             const label =
               status === 'canceled'
                 ? 'Canceled'
