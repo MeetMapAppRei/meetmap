@@ -1,7 +1,4 @@
-import {
-  getDirectionsAppPreference,
-  useAppleMapsForDirections,
-} from './directionsAppPreference'
+import { getDirectionsAppPreference, isAppleMapsPreferred } from './directionsAppPreference'
 
 /**
  * Location strings for geocoding and map directions links.
@@ -102,7 +99,7 @@ export function getDirectionsUrl(event, options = {}) {
   const lng = parseFloat(event.lng)
   const hasCoords = Number.isFinite(lat) && Number.isFinite(lng)
   const app = options.app || getDirectionsAppPreference()
-  const useAppleMaps = useAppleMapsForDirections(app)
+  const useAppleMaps = isAppleMapsPreferred(app)
 
   if (query && !isAmbiguousDirectionsQuery(query)) {
     return directionsUrlForDestination(query, region, useAppleMaps)

@@ -184,7 +184,11 @@ export const initializeNativePush = async ({
 
   try {
     await PushNotifications.register()
-    const token = await withTimeout(registrationResult, PUSH_STEP_TIMEOUT_MS, registerTimeoutMessage)
+    const token = await withTimeout(
+      registrationResult,
+      PUSH_STEP_TIMEOUT_MS,
+      registerTimeoutMessage,
+    )
     return { enabled: true, token, platform }
   } catch (e) {
     if (typeof onRegistrationError === 'function') onRegistrationError(e)

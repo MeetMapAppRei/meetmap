@@ -1,8 +1,5 @@
 import { useTheme } from '../lib/useTheme'
-import {
-  getDefaultDirectionsApp,
-  setDirectionsAppPreference,
-} from '../lib/directionsAppPreference'
+import { getDefaultDirectionsApp, setDirectionsAppPreference } from '../lib/directionsAppPreference'
 import { useDirectionsAppPreference } from '../lib/useDirectionsAppPreference'
 
 function ChoiceRow({ label, description, selected, onSelect, isLight }) {

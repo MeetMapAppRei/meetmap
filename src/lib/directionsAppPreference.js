@@ -28,7 +28,9 @@ export function getDefaultDirectionsApp() {
 /** @returns {DirectionsApp} */
 export function getDirectionsAppPreference() {
   try {
-    const raw = String(window.localStorage.getItem(STORAGE_KEY) || '').trim().toLowerCase()
+    const raw = String(window.localStorage.getItem(STORAGE_KEY) || '')
+      .trim()
+      .toLowerCase()
     if (raw === 'apple' || raw === 'google') return raw
   } catch {}
   return getDefaultDirectionsApp()
@@ -48,6 +50,6 @@ export function subscribeDirectionsAppPreference(listener) {
   return () => listeners.delete(listener)
 }
 
-export function useAppleMapsForDirections(app = getDirectionsAppPreference()) {
+export function isAppleMapsPreferred(app = getDirectionsAppPreference()) {
   return app === 'apple'
 }

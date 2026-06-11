@@ -36,9 +36,12 @@ export function inferMissingFieldsFromDbError(err) {
     if (!found.some((f) => f.key === key)) found.push({ key, label, hint })
   }
 
-  if (/column "title"|"title" of relation/i.test(blob)) add('title', 'Event Name', 'Add an event name')
-  if (/column "date"|"date" of relation/i.test(blob)) add('date', 'Date', 'Pick a date for this meet')
-  if (/column "city"|"city" of relation/i.test(blob)) add('city', 'City, State', 'Add the city and state')
+  if (/column "title"|"title" of relation/i.test(blob))
+    add('title', 'Event Name', 'Add an event name')
+  if (/column "date"|"date" of relation/i.test(blob))
+    add('date', 'Date', 'Pick a date for this meet')
+  if (/column "city"|"city" of relation/i.test(blob))
+    add('city', 'City, State', 'Add the city and state')
   if (/column "location"|"location" of relation/i.test(blob)) {
     add('location', 'Venue / Spot Name', 'Add a venue or spot name')
   }

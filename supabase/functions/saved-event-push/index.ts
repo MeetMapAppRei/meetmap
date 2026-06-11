@@ -185,9 +185,10 @@ async function signApnsJwt() {
 
 async function sendApns(token: string, title: string, body: string, eventId: string) {
   const jwt = await signApnsJwt()
-  const host =
-    APNS_ENV === 'sandbox' ? 'api.sandbox.push.apple.com' : 'api.push.apple.com'
-  const deviceToken = String(token || '').replace(/\s+/g, '').toLowerCase()
+  const host = APNS_ENV === 'sandbox' ? 'api.sandbox.push.apple.com' : 'api.push.apple.com'
+  const deviceToken = String(token || '')
+    .replace(/\s+/g, '')
+    .toLowerCase()
   const url = `https://${host}/3/device/${deviceToken}`
   const messageBody = {
     aps: {
@@ -389,10 +390,7 @@ async function notifySavedEventUpdate(req: NotifyRequest) {
       skipped += 1
       continue
     }
-    const dedupeKey = deviceDedupeKey(
-      `event_update:${eventId}:${message.slice(0, 120)}`,
-      r.token,
-    )
+    const dedupeKey = deviceDedupeKey(`event_update:${eventId}:${message.slice(0, 120)}`, r.token)
     if (await alreadySent(r.userId, dedupeKey)) {
       skipped += 1
       continue

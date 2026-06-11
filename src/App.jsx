@@ -637,11 +637,9 @@ function AppInner() {
       userId: user.id,
       token: pushToken,
       platform: getNativePushPlatform() || 'android',
-    }).catch(
-      (error) => {
-        console.error('Failed to save push token:', error)
-      },
-    )
+    }).catch((error) => {
+      console.error('Failed to save push token:', error)
+    })
   }, [user, pushToken])
 
   useEffect(() => {
@@ -2029,7 +2027,7 @@ function AppInner() {
                     {nearMeOnly ? ' Near Me' : ''}
                     {(thisWeekOnly || nearMeOnly) && showSavedOnly ? ' and' : ''}
                     {showSavedOnly ? ' Saved' : ''}
-                    {(thisWeekOnly || nearMeOnly || showSavedOnly) ? ' to see them.' : '.'}
+                    {thisWeekOnly || nearMeOnly || showSavedOnly ? ' to see them.' : '.'}
                   </>
                 ) : view === 'mine' ? (
                   'Your posted meets will show up here.'

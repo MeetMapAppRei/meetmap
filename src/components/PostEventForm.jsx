@@ -779,7 +779,9 @@ export default function PostEventForm({ onClose, onPosted }) {
       const baseMessage = userMessageForPostSubmitError(stage, e, correlationId)
       if (dbMissing.length > 0) {
         applyMissingFields(dbMissing)
-      } else if (String(e?.message || '').includes('An event with the same title, date, and city')) {
+      } else if (
+        String(e?.message || '').includes('An event with the same title, date, and city')
+      ) {
         const safeTitle = String(form.title || '').trim()
         const safeDate = String(form.date || '').trim()
         const safeCity = String(form.city || '').trim()

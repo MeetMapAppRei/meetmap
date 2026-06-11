@@ -15,9 +15,9 @@
 1. **Post meet without photo** — Sign in, open Post a Meet, fill required fields (name, date, city, address), do **not** add a photo, tap **Drop the Pin**. Event should save and appear on the map.
 2. **Missing field validation** — Leave Date empty and tap **Drop the Pin**. Should highlight Date, scroll to it, and say “Please fill in Date before posting” (not a database/SQL error).
 3. **Post meet with photo** — Same flow with an event photo attached; confirm upload and pin both work.
-3. **Regression: map + detail** — After posting, map should fly to the new pin and open the event card.
-4. **Regression: Near Me / location** — Map still centers on your area when permission is granted.
-5. **Regression: directions** — Settings → directions app preference still opens the chosen maps app from an event.
+4. **Regression: map + detail** — After posting, map should fly to the new pin and open the event card.
+5. **Regression: Near Me / location** — Map still centers on your area when permission is granted.
+6. **Regression: directions** — Settings → directions app preference still opens the chosen maps app from an event.
 
 ---
 
