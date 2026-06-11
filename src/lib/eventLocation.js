@@ -1,5 +1,10 @@
+import {
+  getDirectionsAppPreference,
+  useAppleMapsForDirections,
+} from './directionsAppPreference'
+
 /**
- * Location strings for geocoding and Google Maps links.
+ * Location strings for geocoding and map directions links.
  * Street + city are stored separately; always combine when the street line has no comma.
  */
 
@@ -69,13 +74,26 @@ function googleMapsSearchUrl(query, region) {
   return region ? `${base}&region=${region}` : base
 }
 
+function appleMapsDirectionsUrl(destination) {
+  return `https://maps.apple.com/?daddr=${encodeURIComponent(destination)}`
+}
+
+function directionsUrlForDestination(destination, region, useAppleMaps) {
+  if (!destination) return ''
+  return useAppleMaps
+    ? appleMapsDirectionsUrl(destination)
+    : googleMapsSearchUrl(destination, region)
+}
+
 /**
- * Google Maps link for "Directions".
- * - Full "street, city, ST" text → send that (Google resolves well; Boston case).
+ * Maps link for "Directions".
+ * Uses the user's saved preference (Apple Maps or Google Maps).
+ * - Full "street, city, ST" text → send that (resolves well; Boston case).
  * - Street-only text but pin exists → use lat/lng (West Chester case when city missing in row).
- * - Bias Google region to US or PH when the address context suggests it.
+ * @param {object} [options]
+ * @param {'apple' | 'google'} [options.app]
  */
-export function getDirectionsUrl(event) {
+export function getDirectionsUrl(event, options = {}) {
   if (!event) return ''
   const rawQuery = buildEventLocationQuery(event)
   const query = enrichDirectionsQuery(rawQuery, event?.city)
@@ -83,15 +101,17 @@ export function getDirectionsUrl(event) {
   const lat = parseFloat(event.lat)
   const lng = parseFloat(event.lng)
   const hasCoords = Number.isFinite(lat) && Number.isFinite(lng)
+  const app = options.app || getDirectionsAppPreference()
+  const useAppleMaps = useAppleMapsForDirections(app)
 
   if (query && !isAmbiguousDirectionsQuery(query)) {
-    return googleMapsSearchUrl(query, region)
+    return directionsUrlForDestination(query, region, useAppleMaps)
   }
   if (hasCoords) {
-    return googleMapsSearchUrl(`${lat},${lng}`, region)
+    return directionsUrlForDestination(`${lat},${lng}`, region, useAppleMaps)
   }
   if (query) {
-    return googleMapsSearchUrl(query, region)
+    return directionsUrlForDestination(query, region, useAppleMaps)
   }
   return ''
 }

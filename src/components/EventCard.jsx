@@ -2,6 +2,7 @@ import { useTheme } from '../lib/useTheme'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getDirectionsUrl } from '../lib/eventLocation'
+import { useDirectionsAppPreference } from '../lib/useDirectionsAppPreference'
 
 const TYPE_COLORS = {
   meet: '#FF6B35',
@@ -26,7 +27,8 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
   const isPast = event.date < today
   const posterUsername = event?.profiles?.username
   const posterAvatarUrl = event?.profiles?.avatar_url
-  const directionsUrl = getDirectionsUrl(event)
+  const directionsApp = useDirectionsAppPreference()
+  const directionsUrl = getDirectionsUrl(event, { app: directionsApp })
   const statusMeta = STATUS_META[String(event.status || 'active').toLowerCase()]
   const quality = getEventQuality(event)
 

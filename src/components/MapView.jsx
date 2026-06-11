@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { getCurrentCoords } from '../lib/geolocation'
 
 // 👇 STEP 2: Replace with your Mapbox public token
 // Found at: mapbox.com → Account → Access Tokens
@@ -56,7 +57,13 @@ export default function MapView({ events, onSelectEvent, centerOn, bottomNavHeig
       // Add navigation controls
       map.current.addControl(new window.mapboxgl.NavigationControl(), 'bottom-right')
 
-      // Default map center; we only fly to the user when the parent requests it.
+      getCurrentCoords()
+        .then((coords) => {
+          map.current?.flyTo({ center: [coords.lng, coords.lat], zoom: 10, speed: 1.2 })
+        })
+        .catch(() => {
+          // Keep the default center when location is unavailable or denied.
+        })
     }
     script.onerror = () => setMapboxError(true)
     document.head.appendChild(script)

@@ -423,9 +423,12 @@ export const createEvent = async (eventData, userId) => {
     // Geocoding failures should never block event creation.
   }
 
+  const insertRow = { ...enriched, user_id: userId }
+  if (insertRow.id == null || insertRow.id === '') delete insertRow.id
+
   const { data, error } = await supabase
     .from('events')
-    .insert([{ ...enriched, user_id: userId }])
+    .insert([insertRow])
     .select(
       'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
     )

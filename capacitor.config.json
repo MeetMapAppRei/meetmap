@@ -8,6 +8,9 @@
   "plugins": {
     "StatusBar": {
       "overlaysWebView": false
+    },
+    "Geolocation": {
+      "locationWhenInUsePermission": "Meet Map uses your location to show car meets near you and center the map on your area."
     }
   }
 }

@@ -18,10 +18,24 @@ const INTERNAL_BEARER = Deno.env.get('SAVED_EVENT_PUSH_BEARER') || ''
 const APP_DEEPLINK_BASE = Deno.env.get('APP_DEEPLINK_BASE') || 'meetmap://event/'
 const APP_WEB_BASE = Deno.env.get('APP_WEB_BASE') || 'https://www.findcarmeets.com/?event='
 
-// FCM HTTP v1 auth (service account)
+/** Supabase secrets often store PEM newlines as literal \\n. */
+const normalizePrivateKey = (raw: string) => {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) return ''
+  return trimmed.includes('-----BEGIN') ? trimmed.replace(/\\n/g, '\n') : trimmed
+}
+
+// FCM HTTP v1 auth (service account) — Android
 const FCM_PROJECT_ID = Deno.env.get('FCM_PROJECT_ID') || ''
 const FCM_CLIENT_EMAIL = Deno.env.get('FCM_CLIENT_EMAIL') || ''
-const FCM_PRIVATE_KEY = (Deno.env.get('FCM_PRIVATE_KEY') || '').replace(/\\n/g, '\n')
+const FCM_PRIVATE_KEY = normalizePrivateKey(Deno.env.get('FCM_PRIVATE_KEY') || '')
+
+// APNs HTTP/2 — iOS (Auth Key .p8 from Apple Developer)
+const APNS_KEY_ID = Deno.env.get('APNS_KEY_ID') || ''
+const APNS_TEAM_ID = Deno.env.get('APNS_TEAM_ID') || ''
+const APNS_PRIVATE_KEY = normalizePrivateKey(Deno.env.get('APNS_PRIVATE_KEY') || '')
+const APNS_BUNDLE_ID = Deno.env.get('APNS_BUNDLE_ID') || 'com.findcarmeets.app'
+const APNS_ENV = Deno.env.get('APNS_ENV') || 'production'
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -99,6 +113,124 @@ async function getFcmAccessToken() {
   cachedAccessToken = String(json.access_token)
   cachedAccessTokenExpMs = now + Number(json.expires_in || 3300) * 1000
   return cachedAccessToken
+}
+
+const apnsConfigured = () => Boolean(APNS_KEY_ID && APNS_TEAM_ID && APNS_PRIVATE_KEY)
+
+function derEcdsaToJose(der: Uint8Array, size = 32) {
+  if (!der?.length || der[0] !== 0x30) {
+    throw new Error('Invalid ECDSA signature DER')
+  }
+  let offset = 2
+  if (der[1] & 0x80) offset += der[1] & 0x7f
+  if (offset >= der.length || der[offset] !== 0x02) {
+    throw new Error('Invalid ECDSA signature DER (missing r)')
+  }
+  offset += 1
+  const rLen = der[offset++]
+  if (offset + rLen > der.length) throw new Error('Invalid ECDSA signature DER (r length)')
+  let r = der.slice(offset, offset + rLen)
+  offset += rLen
+  if (offset >= der.length || der[offset] !== 0x02) {
+    throw new Error('Invalid ECDSA signature DER (missing s)')
+  }
+  offset += 1
+  const sLen = der[offset++]
+  if (offset + sLen > der.length) throw new Error('Invalid ECDSA signature DER (s length)')
+  let s = der.slice(offset, offset + sLen)
+  while (r.length > size && r[0] === 0) r = r.slice(1)
+  while (s.length > size && s[0] === 0) s = s.slice(1)
+  const raw = new Uint8Array(size * 2)
+  raw.set(r, size - r.length)
+  raw.set(s, size * 2 - s.length)
+  return raw
+}
+
+let cachedApnsJwt = ''
+let cachedApnsJwtExpMs = 0
+
+async function signApnsJwt() {
+  const now = Date.now()
+  if (cachedApnsJwt && cachedApnsJwtExpMs - now > 60_000) return cachedApnsJwt
+  if (!apnsConfigured()) throw new Error('Missing APNs env vars')
+
+  const header = { alg: 'ES256', kid: APNS_KEY_ID }
+  const iat = Math.floor(now / 1000)
+  const payload = { iss: APNS_TEAM_ID, iat }
+  const enc = new TextEncoder()
+  const headerPart = b64url(enc.encode(JSON.stringify(header)))
+  const payloadPart = b64url(enc.encode(JSON.stringify(payload)))
+  const data = enc.encode(`${headerPart}.${payloadPart}`)
+
+  const pemContents = APNS_PRIVATE_KEY.replace('-----BEGIN PRIVATE KEY-----', '')
+    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/\s+/g, '')
+  const keyBytes = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0))
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    keyBytes.buffer,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  )
+  const sig = new Uint8Array(
+    await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, cryptoKey, data),
+  )
+  // Web Crypto returns raw r||s (64 bytes for P-256); some runtimes return ASN.1 DER instead.
+  const joseSig = sig.length === 64 ? sig : derEcdsaToJose(sig)
+  cachedApnsJwt = `${headerPart}.${payloadPart}.${b64url(joseSig)}`
+  cachedApnsJwtExpMs = now + 50 * 60 * 1000
+  return cachedApnsJwt
+}
+
+async function sendApns(token: string, title: string, body: string, eventId: string) {
+  const jwt = await signApnsJwt()
+  const host =
+    APNS_ENV === 'sandbox' ? 'api.sandbox.push.apple.com' : 'api.push.apple.com'
+  const deviceToken = String(token || '').replace(/\s+/g, '').toLowerCase()
+  const url = `https://${host}/3/device/${deviceToken}`
+  const messageBody = {
+    aps: {
+      alert: { title, body },
+      sound: 'default',
+    },
+    event_id: eventId,
+    click_action: 'OPEN_EVENT',
+    deep_link: `${APP_DEEPLINK_BASE}${eventId}`,
+    web_link: `${APP_WEB_BASE}${eventId}`,
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      authorization: `bearer ${jwt}`,
+      'apns-topic': APNS_BUNDLE_ID,
+      'apns-push-type': 'alert',
+      'apns-priority': '10',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(messageBody),
+  })
+  const text = await res.text().catch(() => '')
+  if (!res.ok) {
+    console.error('APNs rejected push', res.status, text, { env: APNS_ENV, topic: APNS_BUNDLE_ID })
+  }
+  return { ok: res.ok, status: res.status, payload: text }
+}
+
+async function sendPush(
+  platform: string,
+  token: string,
+  title: string,
+  body: string,
+  eventId: string,
+) {
+  if (platform === 'ios') {
+    if (!apnsConfigured()) {
+      return { ok: false, status: 503, payload: 'APNs not configured' }
+    }
+    return sendApns(token, title, body, eventId)
+  }
+  return sendFcmV1(token, title, body, eventId)
 }
 
 async function sendFcmV1(token: string, title: string, body: string, eventId: string) {
@@ -193,8 +325,8 @@ async function getRecipientsForEvent(eventId: string) {
 
   const { data: tokens, error: tokenErr } = await supabase
     .from('device_push_tokens')
-    .select('user_id, token')
-    .eq('platform', 'android')
+    .select('user_id, token, platform')
+    .in('platform', ['android', 'ios'])
     .eq('active', true)
     .in('user_id', userIds)
   if (tokenErr) throw tokenErr
@@ -202,6 +334,7 @@ async function getRecipientsForEvent(eventId: string) {
   return (tokens || []).map((row) => ({
     userId: row.user_id as string,
     token: row.token as string,
+    platform: (row.platform as string) || 'android',
     prefs: prefMap.get(row.user_id as string) || {
       reminders_enabled: true,
       event_updates_enabled: true,
@@ -209,6 +342,11 @@ async function getRecipientsForEvent(eventId: string) {
       reminder_2h_enabled: true,
     },
   }))
+}
+
+/** Dedupe per device so every active token for a user gets the same alert. */
+function deviceDedupeKey(baseKey: string, token: string) {
+  return `${baseKey}::${token}`
 }
 
 async function alreadySent(userId: string, dedupeKey: string) {
@@ -244,25 +382,45 @@ async function notifySavedEventUpdate(req: NotifyRequest) {
   const recipients = await getRecipientsForEvent(eventId)
   let sent = 0
   let skipped = 0
+  const failures: Array<{ platform: string; status: number; detail: string }> = []
 
   for (const r of recipients) {
     if (!r.prefs.event_updates_enabled) {
       skipped += 1
       continue
     }
-    const dedupeKey = `event_update:${eventId}:${message.slice(0, 120)}`
+    const dedupeKey = deviceDedupeKey(
+      `event_update:${eventId}:${message.slice(0, 120)}`,
+      r.token,
+    )
     if (await alreadySent(r.userId, dedupeKey)) {
       skipped += 1
       continue
     }
-    const response = await sendFcmV1(r.token, `New host update: ${eventTitle}`, message, eventId)
+    let response
+    try {
+      response = await sendPush(
+        r.platform,
+        r.token,
+        `New host update: ${eventTitle}`,
+        message,
+        eventId,
+      )
+    } catch (error) {
+      const detail = String(error)
+      console.error('push send failed', r.platform, detail)
+      failures.push({ platform: r.platform, status: 0, detail })
+      continue
+    }
     if (!response.ok) {
-      // Deactivate stale tokens when FCM reports invalid registration.
-      const text = JSON.stringify(response.payload || {})
+      const text = String(response.payload || '')
+      console.error('push send rejected', r.platform, response.status, text)
+      failures.push({ platform: r.platform, status: response.status, detail: text })
       if (
         response.status === 400 ||
         response.status === 404 ||
-        /InvalidRegistration|NotRegistered/i.test(text)
+        response.status === 410 ||
+        /InvalidRegistration|NotRegistered|BadDeviceToken|Unregistered|BadDeviceToken/i.test(text)
       ) {
         await supabase.from('device_push_tokens').update({ active: false }).eq('token', r.token)
       }
@@ -271,7 +429,7 @@ async function notifySavedEventUpdate(req: NotifyRequest) {
     await markSent(r.userId, eventId, 'event_update', dedupeKey)
     sent += 1
   }
-  return { sent, skipped }
+  return { sent, skipped, failures }
 }
 
 async function notifySavedEventStatus(req: NotifyRequest) {
@@ -290,13 +448,31 @@ async function notifySavedEventStatus(req: NotifyRequest) {
       skipped += 1
       continue
     }
-    const dedupeKey = `event_status:${eventId}:${statusLabel.toLowerCase()}`
+    const dedupeKey = deviceDedupeKey(
+      `event_status:${eventId}:${statusLabel.toLowerCase()}`,
+      r.token,
+    )
     if (await alreadySent(r.userId, dedupeKey)) {
       skipped += 1
       continue
     }
-    const response = await sendFcmV1(r.token, `Status changed: ${eventTitle}`, statusLabel, eventId)
-    if (!response.ok) continue
+    let response
+    try {
+      response = await sendPush(
+        r.platform,
+        r.token,
+        `Status changed: ${eventTitle}`,
+        statusLabel,
+        eventId,
+      )
+    } catch (error) {
+      console.error('push send failed', r.platform, String(error))
+      continue
+    }
+    if (!response.ok) {
+      console.error('push send rejected', r.platform, response.status, response.payload)
+      continue
+    }
     await markSent(r.userId, eventId, 'event_status', dedupeKey)
     sent += 1
   }
@@ -344,7 +520,7 @@ async function runReminderTick(req: NotifyRequest) {
           skipped += 1
           continue
         }
-        const dedupeKey = `reminder:${event.id}:${w.id}`
+        const dedupeKey = deviceDedupeKey(`reminder:${event.id}:${w.id}`, r.token)
         if (await alreadySent(r.userId, dedupeKey)) {
           skipped += 1
           continue
@@ -357,12 +533,19 @@ async function runReminderTick(req: NotifyRequest) {
           norm(event.address) ||
           `${norm(event.location)}${event.city ? `, ${event.city}` : ''}`.trim()
         const body = `${when}${place ? ` - ${place}` : ''}`
-        const response = await sendFcmV1(
-          r.token,
-          `Upcoming saved event: ${event.title || 'Event'}`,
-          body,
-          event.id,
-        )
+        let response
+        try {
+          response = await sendPush(
+            r.platform,
+            r.token,
+            `Upcoming saved event: ${event.title || 'Event'}`,
+            body,
+            event.id,
+          )
+        } catch (error) {
+          console.error('push send failed', r.platform, String(error))
+          continue
+        }
         if (!response.ok) continue
         await markSent(r.userId, event.id, 'reminder', dedupeKey)
         sent += 1

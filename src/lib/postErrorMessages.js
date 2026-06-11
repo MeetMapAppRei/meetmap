@@ -23,6 +23,20 @@ function refSuffix(correlationId) {
   return short ? ` Ref: ${short}` : ''
 }
 
+/** Raw DB / PostgREST / SQL messages should never be shown in the post form. */
+function looksLikeDeveloperOrDbError(msg) {
+  const m = String(msg || '')
+  return (
+    /null value in column/i.test(m) ||
+    /violates (not-null|check|foreign key|unique) constraint/i.test(m) ||
+    /invalid input syntax for type/i.test(m) ||
+    /column "[^"]+" of relation/i.test(m) ||
+    /relation "[^"]+" does not exist/i.test(m) ||
+    /row-level security/i.test(m) ||
+    /postgrest|pgrst/i.test(m)
+  )
+}
+
 /**
  * @param {'uploading_photo' | 'creating_event' | ''} stage
  * @param {unknown} err
@@ -76,6 +90,15 @@ export function userMessageForPostSubmitError(stage, err, correlationId) {
     base === 'Connection timed out. Please try again.'
 
   if (!genericSignal) {
+    if (looksLikeDeveloperOrDbError(raw) || looksLikeDeveloperOrDbError(base)) {
+      if (stage === 'uploading_photo') {
+        return `Couldn't upload your photo. Please try again.${suffix}`
+      }
+      if (stage === 'creating_event') {
+        return `Couldn't save your meet. Please check the required fields and try again.${suffix}`
+      }
+      return `Couldn't post your meet. Please try again.${suffix}`
+    }
     return (base || 'Something went wrong. Please try again.') + suffix
   }
 

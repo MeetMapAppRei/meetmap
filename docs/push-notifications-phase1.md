@@ -1,4 +1,4 @@
-# MeetMap Android Push (Phase 1)
+# MeetMap Native Push (Phase 1)
 
 This phase enables:
 
@@ -46,7 +46,31 @@ This phase enables:
 3. Deploy `notification-job-runner`.
 4. Set Android Firebase config (`google-services.json`) and run:
    - `npm run cap:sync`
-5. Open app on Android and tap Alerts to register token.
+5. Open app on Android or iOS and tap **Alerts** to register a device token.
+
+## iOS (iPhone / iPad)
+
+### Xcode
+
+1. Open `ios/App/App.xcworkspace`.
+2. Target **App** → **Signing & Capabilities** → confirm **Push Notifications** is listed (entitlements file `App/App.entitlements` is in the repo).
+3. For **TestFlight / App Store** builds, set `aps-environment` in `App.entitlements` to `production` before archiving.
+4. For **Xcode Run** debug installs on a device, keep `aps-environment` as `development` and set `APNS_ENV=sandbox` on the edge function (below).
+
+### Apple Developer
+
+1. Create an **APNs Auth Key** (.p8) with Push Notifications enabled.
+2. Note the **Key ID** and your **Team ID**.
+
+### `saved-event-push` edge secrets (iOS)
+
+- `APNS_KEY_ID` — Auth Key ID from Apple Developer
+- `APNS_TEAM_ID` — Apple Developer Team ID
+- `APNS_PRIVATE_KEY` — contents of the `.p8` file (newlines as `\n` in Supabase secrets)
+- `APNS_BUNDLE_ID` (optional, default `com.findcarmeets.app`)
+- `APNS_ENV` — `sandbox` for Xcode debug builds, `production` for TestFlight/App Store
+
+Redeploy `saved-event-push` after setting these secrets.
 
 ## User preferences
 
@@ -63,8 +87,8 @@ Users edit these in the app via **Alerts** → **Alert settings** (logged-in acc
 - **Host update posted**: DB trigger inserts a row in `notification_jobs`.
 - **Event status changed**: DB trigger inserts a row in `notification_jobs`.
 - **Runner function** (`notification-job-runner`) reads pending jobs and calls `saved-event-push`.
-- **Push sender** (`saved-event-push`) fan-outs to users who saved the event and have active Android tokens.
-- **Dedupe**: each sent notification stores a `dedupe_key` in `push_notification_sends`.
+- **Push sender** (`saved-event-push`) fan-outs to every active Android/iOS token for users who saved the event.
+- **Dedupe**: each sent notification stores a per-device `dedupe_key` in `push_notification_sends` (same alert can go to phone and tablet).
 
 ## Scheduling
 

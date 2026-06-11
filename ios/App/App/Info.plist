@@ -45,5 +45,17 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Meet Map uses your location to show car meets near you and center the map on your area.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Meet Map uses the camera when you take a photo for an event post.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Meet Map uses your photo library when you choose an image for an event post.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

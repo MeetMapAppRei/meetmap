@@ -32,11 +32,14 @@ import {
   getWebNotificationPermission,
   requestWebNotificationPermission,
   initializeNativePush,
-  isNativeAndroidPushSupported,
+  isNativePushSupported,
+  getNativePushPlatform,
   getNativePushPermission,
+  getWebAlertsUnavailableMessage,
 } from './lib/pushNotifications'
 import AuthModal from './components/AuthModal'
 import NotificationSettingsModal from './components/NotificationSettingsModal'
+import AppSettingsModal from './components/AppSettingsModal'
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   normalizeNotificationPreferences,
@@ -56,6 +59,7 @@ import { buildEventLocationQuery } from './lib/eventLocation'
 import { makeClientUuid } from './lib/clientUuid'
 import { appAlert } from './lib/appAlert'
 import { isEventUpcoming } from './lib/eventSchedule'
+import { getCurrentCoords } from './lib/geolocation'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -232,7 +236,7 @@ const weekRangeKeysLocal = (now = new Date()) => {
 }
 
 function AppInner() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, passwordRecovery, clearPasswordRecovery } = useAuth()
   const { toggleTheme, isLight } = useTheme()
   const filterChipBg = isLight ? '#F2F2F2' : '#1A1A1A'
   const filterChipBorder = isLight ? '#E5E5E5' : '#2A2A2A'
@@ -262,6 +266,7 @@ function AppInner() {
     setSearchQuery(label)
     applySeoForCityPage(label)
   }, [])
+
   const [filterType, setFilterType] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
@@ -280,6 +285,20 @@ function AppInner() {
     })(),
   )
   const [showAuth, setShowAuth] = useState(false)
+  const [authInitialMode, setAuthInitialMode] = useState('login')
+  const openAuth = useCallback((mode = 'login') => {
+    setAuthInitialMode(mode)
+    setShowAuth(true)
+  }, [])
+  const closeAuth = useCallback(() => {
+    setShowAuth(false)
+    setAuthInitialMode('login')
+    clearPasswordRecovery()
+  }, [clearPasswordRecovery])
+  useEffect(() => {
+    if (!passwordRecovery) return
+    openAuth('new-password')
+  }, [passwordRecovery, openAuth])
   const [showPost, setShowPost] = useState(false)
   const [mapSelected, setMapSelected] = useState(null)
   const [showPast, setShowPast] = useState(false)
@@ -291,6 +310,7 @@ function AppInner() {
   )
   const [pushToken, setPushToken] = useState(getStoredNativePushToken)
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
+  const [showAppSettings, setShowAppSettings] = useState(false)
   const [notificationPrefs, setNotificationPrefs] = useState(() => ({
     ...DEFAULT_NOTIFICATION_PREFERENCES,
   }))
@@ -313,6 +333,8 @@ function AppInner() {
   const [nearMeOnly, setNearMeOnly] = useState(false)
   const [nearMeCoords, setNearMeCoords] = useState(null)
   const [nearMeError, setNearMeError] = useState('')
+  const [nearMeLoading, setNearMeLoading] = useState(false)
+  const [mapFocusCoords, setMapFocusCoords] = useState(null)
   const [thisWeekOnly, setThisWeekOnly] = useState(false)
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
   const PLAY_STORE_PROMO_RESERVE = 132 // Extra scroll space when the Play Store promo strip is open above the nav.
@@ -325,7 +347,7 @@ function AppInner() {
   useEffect(() => {
     const onOpen = () => {
       if (user) setShowPost(true)
-      else setShowAuth(true)
+      else openAuth()
     }
     window.addEventListener('meetmap:open-post', onOpen)
     return () => window.removeEventListener('meetmap:open-post', onOpen)
@@ -496,7 +518,19 @@ function AppInner() {
   }, [openEventById])
 
   const handlePosted = (newEvent) => {
-    setEvents((prev) => [newEvent, ...prev])
+    if (!newEvent) return
+    setEvents((prev) => [newEvent, ...prev.filter((e) => e.id !== newEvent.id)])
+    // Client-side filters (ex: This Week) can hide a freshly posted event on another device/build.
+    setThisWeekOnly(false)
+    setNearMeOnly(false)
+    setShowSavedOnly(false)
+    setSelectedEvent(newEvent)
+    const lat = Number(newEvent.lat)
+    const lng = Number(newEvent.lng)
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      setMapFocusCoords({ lat, lng })
+      setView('map')
+    }
   }
 
   const handleUpdated = (updatedEvent) => {
@@ -507,7 +541,7 @@ function AppInner() {
 
   const handleAuthNeeded = () => {
     closeSelectedEvent()
-    setShowAuth(true)
+    openAuth()
   }
 
   useEffect(() => {
@@ -560,7 +594,7 @@ function AppInner() {
   }, [user, savedEventIds])
 
   useEffect(() => {
-    const nativeSupported = isNativeAndroidPushSupported()
+    const nativeSupported = isNativePushSupported()
     if (!nativeSupported) {
       setNotificationPermission(getWebNotificationPermission())
       return
@@ -599,7 +633,11 @@ function AppInner() {
   useEffect(() => {
     if (!user?.id) return
     if (!pushToken) return
-    upsertDevicePushToken({ userId: user.id, token: pushToken, platform: 'android' }).catch(
+    upsertDevicePushToken({
+      userId: user.id,
+      token: pushToken,
+      platform: getNativePushPlatform() || 'android',
+    }).catch(
       (error) => {
         console.error('Failed to save push token:', error)
       },
@@ -668,7 +706,8 @@ function AppInner() {
   }
 
   const handleEnableNotifications = async () => {
-    if (isNativeAndroidPushSupported()) {
+    if (isNativePushSupported()) {
+      const nativePlatform = getNativePushPlatform()
       if (!NATIVE_PUSH_ENABLED) {
         setNotificationPermission('denied')
         await appAlert(
@@ -687,7 +726,9 @@ function AppInner() {
           onRegistrationError: (error) => {
             console.error('Native push registration failed:', error)
             void appAlert(
-              'Firebase could not register this device for push. Use an Android emulator image with Google Play (not “Google APIs” only), or a physical device. Also confirm google-services.json matches the app id.',
+              nativePlatform === 'ios'
+                ? 'Could not register for alerts on this iPhone/iPad. In Xcode, confirm Push Notifications is enabled for the App target, then rebuild and try again on a physical device.'
+                : 'Firebase could not register this device for push. Use an Android emulator image with Google Play (not “Google APIs” only), or a physical device. Also confirm google-services.json matches the app id.',
             )
           },
         })
@@ -702,24 +743,32 @@ function AppInner() {
           const r = result?.reason
           if (r === 'permission-denied') {
             await appAlert(
-              'Notifications are off for Meet Map. Turn them on in Android Settings → Apps → Meet Map → Notifications.',
+              nativePlatform === 'ios'
+                ? 'Notifications are off for Meet Map. Turn them on in Settings → Meet Map → Notifications.'
+                : 'Notifications are off for Meet Map. Turn them on in Android Settings → Apps → Meet Map → Notifications.',
             )
           } else if (r === 'register-failed') {
             await appAlert(
-              'Could not register for alerts (Firebase/FCM). Use a Play-enabled emulator or device, and verify google-services.json in android/app/.',
+              nativePlatform === 'ios'
+                ? 'Could not register for alerts on iOS. Confirm Push Notifications is enabled in Xcode and rebuild the app.'
+                : 'Could not register for alerts (Firebase/FCM). Use a Play-enabled emulator or device, and verify google-services.json in android/app/.',
             )
           } else if (r === 'timed-out') {
             await appAlert(
               result?.message ||
-                'Push setup timed out. Use an emulator with Google Play, sign in to Google, and try again.',
+                (nativePlatform === 'ios'
+                  ? 'Push setup timed out on iOS. Use a physical device with Push Notifications enabled in Xcode.'
+                  : 'Push setup timed out. Use an emulator with Google Play, sign in to Google, and try again.'),
             )
-          } else if (r === 'not-native-android') {
+          } else if (r === 'not-native') {
             await appAlert(
-              'Meet Map does not detect the native Android shell. Reinstall from Android Studio or use the Play build — not the website tab in a browser.',
+              'Meet Map does not detect the native app shell. Reinstall from Xcode or Android Studio — not a browser tab.',
             )
           } else {
             await appAlert(
-              'Could not enable alerts. If you are on an emulator, create an AVD that includes the Play Store / Google Play.',
+              nativePlatform === 'ios'
+                ? 'Could not enable alerts on iOS. Try again on a physical device after rebuilding from Xcode.'
+                : 'Could not enable alerts. If you are on an emulator, create an AVD that includes the Play Store / Google Play.',
             )
           }
         }
@@ -734,9 +783,7 @@ function AppInner() {
     }
 
     if (typeof window === 'undefined' || !('Notification' in window)) {
-      await appAlert(
-        'This browser does not support notifications. Open Meet Map in the Android app for alerts.',
-      )
+      await appAlert(getWebAlertsUnavailableMessage())
       return
     }
     try {
@@ -778,8 +825,8 @@ function AppInner() {
     setShowNotificationSettings(true)
   }
 
-  const nativePushTemporarilyDisabled = isNativeAndroidPushSupported() && !NATIVE_PUSH_ENABLED
-  const alertsEnabled = isNativeAndroidPushSupported()
+  const nativePushTemporarilyDisabled = isNativePushSupported() && !NATIVE_PUSH_ENABLED
+  const alertsEnabled = isNativePushSupported()
     ? Boolean(pushToken) && !nativePushTemporarilyDisabled
     : notificationPermission === 'granted'
 
@@ -838,6 +885,15 @@ function AppInner() {
           .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
       : eventsFilteredForWeek
 
+  const eventsBeforeClientFilters =
+    view === 'mine' && user
+      ? filteredDedupedEvents.filter((e) => e?.user_id === user.id)
+      : filteredDedupedEvents
+  const eventsHiddenByClientFilters = Math.max(
+    0,
+    eventsBeforeClientFilters.length - eventsForCurrentView.length,
+  )
+
   const upcomingCount = eventsForCurrentView.filter((e) => e.date >= todayKey).length
 
   const searchScopeLabel = (() => {
@@ -848,7 +904,7 @@ function AppInner() {
   })()
 
   useEffect(() => {
-    if (isNativeAndroidPushSupported()) return
+    if (isNativePushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
     if (!notificationPrefs.reminders_enabled) return
@@ -907,7 +963,7 @@ function AppInner() {
   }, [notificationPermission, notificationPrefs, savedEventIds, events, user])
 
   useEffect(() => {
-    if (isNativeAndroidPushSupported()) return
+    if (isNativePushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
     if (!notificationPrefs.event_updates_enabled) return
@@ -977,7 +1033,7 @@ function AppInner() {
   }, [notificationPermission, notificationPrefs, savedEventIds, events, user])
 
   useEffect(() => {
-    if (isNativeAndroidPushSupported()) return
+    if (isNativePushSupported()) return
     if (typeof window === 'undefined' || !('Notification' in window)) return
     if (notificationPermission !== 'granted') return
     if (!notificationPrefs.event_updates_enabled) return
@@ -1055,20 +1111,19 @@ function AppInner() {
     return () => window.clearInterval(interval)
   }, [notificationPermission, notificationPrefs, savedEventIds, events, user])
 
-  const requestNearMe = () => {
+  const requestNearMe = async () => {
     setNearMeError('')
-    if (!navigator.geolocation) {
-      setNearMeError('Geolocation not supported')
-      return
+    setNearMeLoading(true)
+    try {
+      const coords = await getCurrentCoords()
+      setNearMeCoords(coords)
+      setNearMeOnly(true)
+    } catch (err) {
+      setNearMeError(err?.message || 'Could not get location')
+      setNearMeOnly(false)
+    } finally {
+      setNearMeLoading(false)
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setNearMeCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        setNearMeOnly(true)
-      },
-      (err) => setNearMeError(err.message || 'Could not get location'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5 * 60 * 1000 },
-    )
   }
 
   const loadPendingImports = useCallback(async () => {
@@ -1139,7 +1194,7 @@ function AppInner() {
     if (!importParams) return
     if (authLoading) return
     if (!user) {
-      setShowAuth(true)
+      openAuth()
       return
     }
     if (!canAccessImports) {
@@ -1274,7 +1329,7 @@ function AppInner() {
 
       if (!user) {
         setImportError('Log in to create this flyer import.')
-        setShowAuth(true)
+        openAuth()
         return
       }
 
@@ -1528,7 +1583,7 @@ function AppInner() {
               </div>
             ) : (
               <button
-                onClick={() => setShowAuth(true)}
+                onClick={() => openAuth()}
                 style={{
                   background: 'none',
                   border: '1px solid #FF6B3555',
@@ -1544,6 +1599,24 @@ function AppInner() {
                 LOG IN
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setShowAppSettings(true)}
+              style={{
+                background: 'none',
+                border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+                borderRadius: 8,
+                padding: '7px 9px',
+                color: isLight ? '#444' : '#555',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+              title="App settings"
+            >
+              Settings
+            </button>
             <button
               onClick={toggleTheme}
               style={{
@@ -1626,7 +1699,7 @@ function AppInner() {
               </button>
             )}
             <button
-              onClick={() => (user ? setShowPost(true) : setShowAuth(true))}
+              onClick={() => (user ? setShowPost(true) : openAuth())}
               style={{
                 background: '#FF6B35',
                 color: '#0A0A0A',
@@ -1708,9 +1781,15 @@ function AppInner() {
           {/* Near Me (next to All Events) */}
           <button
             onClick={() => {
-              if (nearMeOnly) setNearMeOnly(false)
-              else requestNearMe()
+              if (nearMeLoading) return
+              if (nearMeOnly) {
+                setNearMeOnly(false)
+              } else {
+                setMapFocusCoords(null)
+                requestNearMe()
+              }
             }}
+            disabled={nearMeLoading}
             style={{
               background: nearMeOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
               color: nearMeOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
@@ -1721,12 +1800,13 @@ function AppInner() {
               fontFamily: "'DM Sans', sans-serif",
               fontSize: 12,
               fontWeight: 600,
-              cursor: 'pointer',
+              cursor: nearMeLoading ? 'wait' : 'pointer',
+              opacity: nearMeLoading ? 0.7 : 1,
               textTransform: 'uppercase',
               letterSpacing: 0.5,
             }}
           >
-            {nearMeOnly ? `✓ Near Me` : `Near Me`}
+            {nearMeLoading ? 'Locating…' : nearMeOnly ? `✓ Near Me` : `Near Me`}
           </button>
 
           {/* This Week */}
@@ -1840,14 +1920,14 @@ function AppInner() {
               setMapSelected(e)
               setSelectedEvent(e)
             }}
-            centerOn={nearMeOnly ? nearMeCoords : null}
+            centerOn={mapFocusCoords || (nearMeOnly ? nearMeCoords : null)}
             bottomNavHeight={
               BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)
             }
           />
           <FirstEventNudge
             bottomOffsetPx={BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)}
-            onPost={() => (user ? setShowPost(true) : setShowAuth(true))}
+            onPost={() => (user ? setShowPost(true) : openAuth())}
           />
         </div>
       )}
@@ -1932,12 +2012,30 @@ function AppInner() {
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#333' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🚗</div>
               <div style={{ fontSize: 22, letterSpacing: 1, marginBottom: 6 }}>
-                {view === 'mine' ? 'NO POSTS YET' : 'NO EVENTS YET'}
+                {eventsHiddenByClientFilters > 0
+                  ? 'NO MATCHING EVENTS'
+                  : view === 'mine'
+                    ? 'NO POSTS YET'
+                    : 'NO EVENTS YET'}
               </div>
               <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: '#444' }}>
-                {view === 'mine'
-                  ? 'Your posted meets will show up here.'
-                  : 'Be the first to post a meet in your area!'}
+                {eventsHiddenByClientFilters > 0 ? (
+                  <>
+                    {eventsHiddenByClientFilters} event
+                    {eventsHiddenByClientFilters === 1 ? '' : 's'} matched your search but{' '}
+                    {eventsHiddenByClientFilters === 1 ? 'is' : 'are'} hidden by active filters.
+                    {thisWeekOnly ? ' Turn off This Week' : ''}
+                    {thisWeekOnly && nearMeOnly ? ' and' : ''}
+                    {nearMeOnly ? ' Near Me' : ''}
+                    {(thisWeekOnly || nearMeOnly) && showSavedOnly ? ' and' : ''}
+                    {showSavedOnly ? ' Saved' : ''}
+                    {(thisWeekOnly || nearMeOnly || showSavedOnly) ? ' to see them.' : '.'}
+                  </>
+                ) : view === 'mine' ? (
+                  'Your posted meets will show up here.'
+                ) : (
+                  'Be the first to post a meet in your area!'
+                )}
               </div>
             </div>
           ) : (
@@ -2055,7 +2153,9 @@ function AppInner() {
       </div>
 
       {/* ── MODALS ── */}
-      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+      {showAuth && <AuthModal initialMode={authInitialMode} onClose={closeAuth} />}
+      {showAppSettings && <AppSettingsModal onClose={() => setShowAppSettings(false)} />}
+
       {showNotificationSettings && (
         <NotificationSettingsModal
           onClose={() => setShowNotificationSettings(false)}
@@ -2067,7 +2167,7 @@ function AppInner() {
           onRequestEnable={handleEnableNotifications}
           onRequestLogin={() => {
             setShowNotificationSettings(false)
-            setShowAuth(true)
+            openAuth()
           }}
         />
       )}

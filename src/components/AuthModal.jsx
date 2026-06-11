@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { getAuthRedirectUrl } from '../lib/apiOrigin'
 import { signIn, signUp, supabase } from '../lib/supabase'
 import { useTheme } from '../lib/useTheme'
 
@@ -69,15 +70,22 @@ const S = {
   },
 }
 
-export default function AuthModal({ onClose }) {
-  const [mode, setMode] = useState('login') // login | signup | reset
+export default function AuthModal({ onClose, initialMode = 'login' }) {
+  const [mode, setMode] = useState(initialMode) // login | signup | reset | new-password
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const { isLight } = useTheme()
+
+  useEffect(() => {
+    setMode(initialMode)
+    setError('')
+    setSuccess('')
+  }, [initialMode])
 
   const overlayStyle = {
     ...S.overlay,
@@ -131,10 +139,17 @@ export default function AuthModal({ onClose }) {
         }, 2000)
       } else if (mode === 'reset') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: 'https://meetmap-gilt.vercel.app',
+          redirectTo: getAuthRedirectUrl(),
         })
         if (error) throw error
         setSuccess('Password reset email sent! Check your inbox.')
+      } else if (mode === 'new-password') {
+        if (password.length < 6) throw new Error('Password must be at least 6 characters')
+        if (password !== confirmPassword) throw new Error('Passwords do not match')
+        const { error } = await supabase.auth.updateUser({ password })
+        if (error) throw error
+        setSuccess('Password updated! You can now log in with your new password.')
+        setTimeout(() => onClose(), 2000)
       }
     } catch (e) {
       const msg = e.message || 'Something went wrong'
@@ -153,10 +168,22 @@ export default function AuthModal({ onClose }) {
     setMode(newMode)
     setError('')
     setSuccess('')
+    setPassword('')
+    setConfirmPassword('')
   }
 
-  const titles = { login: 'WELCOME BACK', signup: 'JOIN THE SCENE', reset: 'RESET PASSWORD' }
-  const btnLabels = { login: 'LET ME IN', signup: 'CREATE ACCOUNT', reset: 'SEND RESET EMAIL' }
+  const titles = {
+    login: 'WELCOME BACK',
+    signup: 'JOIN THE SCENE',
+    reset: 'RESET PASSWORD',
+    'new-password': 'SET NEW PASSWORD',
+  }
+  const btnLabels = {
+    login: 'LET ME IN',
+    signup: 'CREATE ACCOUNT',
+    reset: 'SEND RESET EMAIL',
+    'new-password': 'UPDATE PASSWORD',
+  }
 
   return (
     <div style={overlayStyle} onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -206,21 +233,54 @@ export default function AuthModal({ onClose }) {
           />
         )}
 
-        <input
-          style={inputStyle}
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        {mode !== 'new-password' && (
+          <input
+            style={inputStyle}
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        )}
+
+        {mode === 'new-password' && (
+          <div
+            style={{
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 13,
+              color: helperText,
+              marginBottom: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            Choose a new password for your account.
+          </div>
+        )}
 
         {mode !== 'reset' && (
           <input
             style={inputStyle}
             type="password"
-            placeholder={mode === 'signup' ? 'Password (min 6 characters)' : 'Password'}
+            placeholder={
+              mode === 'signup'
+                ? 'Password (min 6 characters)'
+                : mode === 'new-password'
+                  ? 'New password (min 6 characters)'
+                  : 'Password'
+            }
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handle()}
+          />
+        )}
+
+        {mode === 'new-password' && (
+          <input
+            style={inputStyle}
+            type="password"
+            placeholder="Confirm new password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handle()}
           />
         )}
@@ -281,7 +341,7 @@ export default function AuthModal({ onClose }) {
               </span>
             </>
           )}
-          {mode === 'reset' && (
+          {(mode === 'reset' || mode === 'new-password') && (
             <>
               <span
                 onClick={() => switchMode('login')}

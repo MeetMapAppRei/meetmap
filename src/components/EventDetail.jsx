@@ -15,6 +15,7 @@ import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'
 import { areEventCoordsPlausible, geocodeAddress } from '../lib/geocode'
 import { buildEventLocationQuery, getDirectionsUrl } from '../lib/eventLocation'
+import { useDirectionsAppPreference } from '../lib/useDirectionsAppPreference'
 import { makeClientUuid } from '../lib/clientUuid'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
 import ReportEventModal from './ReportEventModal'
@@ -509,7 +510,8 @@ export default function EventDetail({
     : 'active'
   const statusMeta = STATUS_META[statusKey]
   const quality = getEventQuality(event)
-  const directionsUrl = getDirectionsUrl(event)
+  const directionsApp = useDirectionsAppPreference()
+  const directionsUrl = getDirectionsUrl(event, { app: directionsApp })
   const isOwner = user && event.user_id === user.id
 
   // Fix pins geocoded under country=us when the address is abroad (e.g. White Plains, MD vs Quezon City).

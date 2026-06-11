@@ -32,6 +32,7 @@
     "@capacitor/app": "^6.0.3",
     "@capacitor/core": "^6.2.0",
     "@capacitor/dialog": "^6.0.3",
+    "@capacitor/geolocation": "^6.1.1",
     "@capacitor/push-notifications": "^6.0.2",
     "@supabase/supabase-js": "^2.43.0",
     "react": "^18.3.1",

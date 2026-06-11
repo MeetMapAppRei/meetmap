@@ -12,6 +12,12 @@ import { apiUrl } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { buildEventLocationQuery, buildGeocodeQuery } from '../lib/eventLocation'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
+import {
+  getMissingPostEventFields,
+  inferMissingFieldsFromDbError,
+  messageForMissingPostEventFields,
+  POST_EVENT_REQUIRED_FIELDS,
+} from '../lib/postEventValidation'
 import { compressImageForUploadUnder } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
 import { makeClientUuid } from '../lib/clientUuid'
@@ -419,6 +425,7 @@ export default function PostEventForm({ onClose, onPosted }) {
   const flyerRef = useRef()
   /** Blocks double-submit before React re-renders disabled={loading}. */
   const submitGuardRef = useRef(false)
+  const fieldRefs = useRef({})
   const [form, setForm] = useState({
     title: '',
     type: 'meet',
@@ -497,6 +504,35 @@ export default function PostEventForm({ onClose, onPosted }) {
     colorScheme: isLight ? 'light' : 'dark',
   }
   const closeColor = isLight ? '#666' : '#555'
+  const missingHintStyle = {
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 11,
+    color: '#FF6060',
+    marginTop: -6,
+    marginBottom: 8,
+  }
+
+  const focusMissingField = (key) => {
+    const el = fieldRefs.current[key]
+    if (!el) return
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.focus?.({ preventScroll: true })
+    } catch {}
+  }
+
+  const applyMissingFields = (missing) => {
+    if (!missing?.length) return
+    setMissingFields(missing.map((m) => m.key))
+    setError(messageForMissingPostEventFields(missing))
+    focusMissingField(missing[0].key)
+  }
+
+  const fieldHint = (key) => {
+    const meta = POST_EVENT_REQUIRED_FIELDS.find((f) => f.key === key)
+    if (!meta || !missingFields.includes(key)) return null
+    return <div style={missingHintStyle}>{meta.hint}</div>
+  }
   const errorStyle = {
     background: isLight ? '#FFF1F1' : '#1A0A0A',
     border: `1px solid ${isLight ? '#FF6B6B55' : '#FF353544'}`,
@@ -656,15 +692,9 @@ export default function PostEventForm({ onClose, onPosted }) {
 
   const handleSubmit = async () => {
     if (submitGuardRef.current) return
-    const required = [
-      { key: 'title', label: 'Event Name' },
-      { key: 'date', label: 'Date' },
-      { key: 'city', label: 'City, State' },
-    ]
-    const missing = required.filter((f) => !String(form[f.key] || '').trim())
+    const missing = getMissingPostEventFields(form)
     if (missing.length > 0) {
-      setMissingFields(missing.map((m) => m.key))
-      setError(`Please complete: ${missing.map((m) => m.label).join(', ')}.`)
+      applyMissingFields(missing)
       return
     }
     if (!user?.id) {
@@ -698,11 +728,12 @@ export default function PostEventForm({ onClose, onPosted }) {
         .filter(Boolean)
       const safeLocation = String(form.location || '').trim() || String(form.city || '').trim()
       const hasPhotoAtSubmit = !!photo
-      const clientEventId = hasPhotoAtSubmit ? makeClientUuid() : null
+      // Always assign a client UUID so inserts never send id=null (which blocks DB defaults).
+      const clientEventId = makeClientUuid()
 
       // Upload the photo first so a connection error cannot leave a partially-created event row.
       let photoUrl = null
-      if (hasPhotoAtSubmit && clientEventId) {
+      if (hasPhotoAtSubmit) {
         stage = 'uploading_photo'
         photoUrl = await withNetworkRetries(
           () => uploadEventPhoto(photo, clientEventId, { correlationId }),
@@ -714,7 +745,7 @@ export default function PostEventForm({ onClose, onPosted }) {
       }
 
       eventPayload = {
-        id: clientEventId || undefined,
+        id: clientEventId,
         title: form.title,
         type: form.type,
         date: form.date,
@@ -743,9 +774,12 @@ export default function PostEventForm({ onClose, onPosted }) {
       onClose()
     } catch (e) {
       console.error('PostEventForm submit failed', { stage, correlationId, err: e })
+      const dbMissing = inferMissingFieldsFromDbError(e)
       const isConn = isTransientNetworkError(e)
       const baseMessage = userMessageForPostSubmitError(stage, e, correlationId)
-      if (String(e?.message || '').includes('An event with the same title, date, and city')) {
+      if (dbMissing.length > 0) {
+        applyMissingFields(dbMissing)
+      } else if (String(e?.message || '').includes('An event with the same title, date, and city')) {
         const safeTitle = String(form.title || '').trim()
         const safeDate = String(form.date || '').trim()
         const safeCity = String(form.city || '').trim()
@@ -1005,6 +1039,9 @@ export default function PostEventForm({ onClose, onPosted }) {
 
         <label style={labelStyle}>Event Name *</label>
         <input
+          ref={(el) => {
+            fieldRefs.current.title = el
+          }}
           style={{
             ...inputStyle,
             borderColor: missingFields.includes('title') ? '#FF6060' : inputStyle.border,
@@ -1017,6 +1054,7 @@ export default function PostEventForm({ onClose, onPosted }) {
               setMissingFields((prev) => prev.filter((k) => k !== 'title'))
           }}
         />
+        {fieldHint('title')}
 
         <label style={labelStyle}>Street Address (for map pin)</label>
         <input
@@ -1076,6 +1114,9 @@ export default function PostEventForm({ onClose, onPosted }) {
 
         <label style={labelStyle}>City, State *</label>
         <input
+          ref={(el) => {
+            fieldRefs.current.city = el
+          }}
           style={{
             ...inputStyle,
             borderColor: missingFields.includes('city') ? '#FF6060' : inputStyle.border,
@@ -1088,6 +1129,7 @@ export default function PostEventForm({ onClose, onPosted }) {
               setMissingFields((prev) => prev.filter((k) => k !== 'city'))
           }}
         />
+        {fieldHint('city')}
 
         <label style={labelStyle}>Hosted By</label>
         <input
@@ -1109,6 +1151,9 @@ export default function PostEventForm({ onClose, onPosted }) {
           <div>
             <label style={labelStyle}>Date *</label>
             <input
+              ref={(el) => {
+                fieldRefs.current.date = el
+              }}
               style={{
                 ...inputStyle,
                 borderColor: missingFields.includes('date') ? '#FF6060' : inputStyle.border,
@@ -1121,6 +1166,7 @@ export default function PostEventForm({ onClose, onPosted }) {
                   setMissingFields((prev) => prev.filter((k) => k !== 'date'))
               }}
             />
+            {fieldHint('date')}
           </div>
           <div>
             <label style={labelStyle}>Time</label>
