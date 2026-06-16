@@ -42,6 +42,18 @@ function isTransientNetworkError(e) {
   )
 }
 
+function userMessageForFlyerScanError(message) {
+  const m = String(message || '').trim()
+  if (!m) return ''
+  if (
+    /^model\s*:/i.test(m) ||
+    /invalid model identifier|not a valid model|model_not_found|does not exist/i.test(m)
+  ) {
+    return 'Flyer import is temporarily unavailable. Please try again later or fill in the form manually.'
+  }
+  return m
+}
+
 function normalizeFlyerDates(info) {
   const raw = info?.dates
   if (Array.isArray(raw) && raw.length) {
@@ -651,12 +663,13 @@ export default function PostEventForm({ onClose, onPosted }) {
         }
       }
     } catch (e) {
-      const msg = humanizeFetchError(e) || (typeof e === 'string' ? e : String(e))
+      const rawMsg = humanizeFetchError(e) || (typeof e === 'string' ? e : String(e))
+      const msg = userMessageForFlyerScanError(rawMsg)
       const base = msg || 'Could not read flyer. Try a clearer image or fill in manually.'
       setError(base + refSuffixForLog(flyerCorrelationId))
       void reportFlyerScanDiagnostic({
         correlationId: flyerCorrelationId,
-        message: String(e?.message || ''),
+        message: String(e?.message || rawMsg || ''),
         code: String(e?.code || ''),
         details: String(e?.details || e?.hint || ''),
         stage: 'flyer_extract',

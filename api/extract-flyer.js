@@ -23,6 +23,8 @@ const PROMPT = `Extract car meet event info from this flyer. Return ONLY a JSON 
 }
 If a field is not found, use empty string for strings or [] for dates. For dates: list EVERY distinct event date shown on the flyer (multi-day meets, recurring dates, date ranges, or multiple listed days) in "dates" as ISO strings sorted earliest-first. If there is only one date, use a single-element array. Set "date" to the same value as the first/primary date (usually the earliest). For date, convert to YYYY-MM-DD using the current year ${new Date().getFullYear()} if no year is specified on the flyer. For time use 24hr format.`
 
+const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6'
+
 const norm = (value) =>
   String(value ?? '')
     .replace(/\u2013|\u2014/g, '-') // en/em dash
@@ -30,6 +32,18 @@ const norm = (value) =>
     .trim()
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function pickAnthropicModel() {
+  const fromEnv = norm(process.env.ANTHROPIC_FLYER_MODEL || process.env.ANTHROPIC_MODEL)
+  return fromEnv || DEFAULT_ANTHROPIC_MODEL
+}
+
+function isModelIdError(message) {
+  const m = String(message || '')
+  return /model(_not_found)?|not a valid model|does not exist|invalid model identifier|\bmodel:\b/i.test(
+    m,
+  )
+}
 
 /** Normalize model output: dedupe, sort, keep date in sync with dates[0]. */
 function normalizeExtractedDates(extracted) {
@@ -213,6 +227,8 @@ export default async function handler(req, res) {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) return res.status(500).json(withCid({ error: 'API key not configured' }))
 
+    const model = pickAnthropicModel()
+
     // If the client already uploaded the image bytes, use that directly.
     if (imageBase64) {
       const mt =
@@ -228,7 +244,7 @@ export default async function handler(req, res) {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model,
           max_tokens: 1000,
           messages: [
             {
@@ -265,6 +281,16 @@ export default async function handler(req, res) {
           return res
             .status(503)
             .json(withCid({ error: 'Overloaded. Please try again in a moment.', status: 503 }))
+        }
+        if (isModelIdError(err)) {
+          console.error('[meetmap] extract-flyer invalid model', { model, correlationId })
+          return res.status(503).json(
+            withCid({
+              error:
+                'Flyer import is temporarily unavailable (AI model misconfigured). Please try again later or fill in the form manually.',
+              status: 503,
+            }),
+          )
         }
         return res.status(status).json(withCid({ error: err, status }))
       }
@@ -443,7 +469,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model,
         max_tokens: 1000,
         messages: [
           {
@@ -462,6 +488,16 @@ export default async function handler(req, res) {
         data?.message ||
         (typeof data?.error === 'string' ? data.error : null) ||
         JSON.stringify(data)
+      if (isModelIdError(err)) {
+        console.error('[meetmap] extract-flyer invalid model', { model, correlationId })
+        return res.status(503).json(
+          withCid({
+            error:
+              'Flyer import is temporarily unavailable (AI model misconfigured). Please try again later or fill in the form manually.',
+            status: 503,
+          }),
+        )
+      }
       return res.status(response.status).json(withCid({ error: err, status: response.status }))
     }
 
