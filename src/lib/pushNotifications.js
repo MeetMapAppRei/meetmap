@@ -121,6 +121,27 @@ export const getNativePushPermission = async () => {
   }
 }
 
+/**
+ * Register a tap handler for push notifications without prompting for permissions.
+ * Useful on app startup so tapping a notification can deep-link into the app.
+ */
+export const addNativePushTapListener = (onNotificationTap) => {
+  if (!isNativePushSupported()) return null
+  if (typeof onNotificationTap !== 'function') return null
+  try {
+    return PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      try {
+        onNotificationTap(action)
+      } catch (e) {
+        console.warn('Native push tap handler failed:', e)
+      }
+    })
+  } catch (e) {
+    console.warn('Failed to add native push tap listener:', e)
+    return null
+  }
+}
+
 export const initializeNativePush = async ({
   onToken,
   onRegistrationError,

@@ -60,6 +60,7 @@ import { makeClientUuid } from './lib/clientUuid'
 import { appAlert } from './lib/appAlert'
 import { isEventUpcoming } from './lib/eventSchedule'
 import { getCurrentCoords } from './lib/geolocation'
+import { addNativePushTapListener } from './lib/pushNotifications'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -284,6 +285,7 @@ function AppInner() {
       }
     })(),
   )
+  const [queuedEventId, setQueuedEventId] = useState(() => pendingSharedEventIdRef.current)
   const [showAuth, setShowAuth] = useState(false)
   const [authInitialMode, setAuthInitialMode] = useState('login')
   const openAuth = useCallback((mode = 'login') => {
@@ -506,8 +508,9 @@ function AppInner() {
 
   // Shared links and notification deep links (?event=uuid)
   useEffect(() => {
-    const eventId = pendingSharedEventIdRef.current
+    const eventId = String(queuedEventId || '').trim()
     if (!eventId) return
+    setQueuedEventId('')
     pendingSharedEventIdRef.current = ''
     void openEventById(eventId)
     try {
@@ -515,7 +518,20 @@ function AppInner() {
       next.searchParams.delete('event')
       window.history.replaceState({}, '', `${next.pathname}${next.search}`)
     } catch {}
-  }, [openEventById])
+  }, [openEventById, queuedEventId])
+
+  // Ensure notification taps deep-link even if the user never re-opens Alerts settings.
+  useEffect(() => {
+    if (!isNativePushSupported() || !NATIVE_PUSH_ENABLED) return
+    const handle = addNativePushTapListener((action) => {
+      void openNotificationLink(action, (id) => setQueuedEventId(String(id || '').trim()))
+    })
+    return () => {
+      try {
+        handle?.remove?.()
+      } catch {}
+    }
+  }, [])
 
   const handlePosted = (newEvent) => {
     if (!newEvent) return
