@@ -33,9 +33,27 @@ const norm = (value) =>
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+function normalizeAnthropicModelId(model) {
+  const m = norm(model)
+  if (!m) return ''
+  const lower = m.toLowerCase()
+
+  // Sonnet 4 (and dated variants) were retired — map them to Sonnet 4.6.
+  if (
+    lower === 'claude-sonnet-4' ||
+    lower.startsWith('claude-sonnet-4-') ||
+    lower === 'sonnet-4' ||
+    lower.startsWith('sonnet-4-')
+  ) {
+    return DEFAULT_ANTHROPIC_MODEL
+  }
+
+  return m
+}
+
 function pickAnthropicModel() {
   const fromEnv = norm(process.env.ANTHROPIC_FLYER_MODEL || process.env.ANTHROPIC_MODEL)
-  return fromEnv || DEFAULT_ANTHROPIC_MODEL
+  return normalizeAnthropicModelId(fromEnv) || DEFAULT_ANTHROPIC_MODEL
 }
 
 function isModelIdError(message) {

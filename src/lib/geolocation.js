@@ -1,5 +1,4 @@
 import { Capacitor } from '@capacitor/core'
-import { Geolocation } from '@capacitor/geolocation'
 
 const DEFAULT_OPTIONS = {
   enableHighAccuracy: true,
@@ -11,7 +10,14 @@ function locationGranted(status) {
   return status?.location === 'granted' || status?.coarseLocation === 'granted'
 }
 
-async function ensureNativeLocationPermission() {
+async function loadNativeGeolocation() {
+  // Prevent Vite/Rollup from trying to bundle/resolve this native-only plugin in web builds.
+  const modName = '@capacitor/geolocation'
+  const mod = await import(/* @vite-ignore */ modName)
+  return mod?.Geolocation
+}
+
+async function ensureNativeLocationPermission(Geolocation) {
   let status = await Geolocation.checkPermissions()
   if (locationGranted(status)) return
 
@@ -25,7 +31,9 @@ export async function getCurrentCoords(options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options }
 
   if (Capacitor.isNativePlatform()) {
-    await ensureNativeLocationPermission()
+    const Geolocation = await loadNativeGeolocation()
+    if (!Geolocation) throw new Error('Native geolocation plugin not available')
+    await ensureNativeLocationPermission(Geolocation)
     const pos = await Geolocation.getCurrentPosition({
       enableHighAccuracy: opts.enableHighAccuracy,
       timeout: opts.timeout,
