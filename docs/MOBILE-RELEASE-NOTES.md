@@ -1,5 +1,28 @@
 # Mobile release notes
 
+## 1.1.0 (Android versionCode 38)
+
+**Google Play "What's new" (paste):**
+
+```
+• Improved mobile layout so Meet Map uses the full screen width more reliably
+• Added adjustable Near Me radius for broader or tighter local searches
+• Fixed event cards opening from push notifications
+• Improved flyer import reliability
+• Bug fixes and stability improvements
+```
+
+### What to test (Android versionCode 38)
+
+1. **Mobile layout** — Open the app on Android and confirm the map, bottom nav, forms, and event detail fill the screen without side gaps.
+2. **Near Me radius** — Use Near Me and change the radius; nearby events should update according to the selected range.
+3. **Push notification tap** — Tap a saved-event notification; the app should open the matching event card.
+4. **Flyer import** — Import an event flyer and confirm the extracted meet details populate correctly.
+5. **Regression: posting** — Post a meet with and without a photo; both should save and appear on the map.
+6. **Regression: directions** — Settings → directions app preference should still open the chosen maps app from an event.
+
+---
+
 ## 1.1.0 (iOS build 8)
 
 **App Store / TestFlight “What’s New” (paste):**
