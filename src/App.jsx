@@ -134,6 +134,15 @@ const DEFAULT_NEAR_ME_RADIUS_MILES = 25
 const MIN_NEAR_ME_RADIUS_MILES = 5
 const MAX_NEAR_ME_RADIUS_MILES = 100
 const NEAR_ME_RADIUS_STEP_MILES = 5
+const NEAR_ME_RADIUS_OPTIONS = Array.from(
+  {
+    length:
+      Math.floor(
+        (MAX_NEAR_ME_RADIUS_MILES - MIN_NEAR_ME_RADIUS_MILES) / NEAR_ME_RADIUS_STEP_MILES,
+      ) + 1,
+  },
+  (_, i) => MIN_NEAR_ME_RADIUS_MILES + i * NEAR_ME_RADIUS_STEP_MILES,
+)
 
 const clampNearMeRadiusMiles = (value) => {
   const radius = Number(value)
@@ -363,7 +372,6 @@ function AppInner() {
   const [nearMeError, setNearMeError] = useState('')
   const [nearMeLoading, setNearMeLoading] = useState(false)
   const [nearMeRadiusMiles, setNearMeRadiusMiles] = useState(getStoredNearMeRadiusMiles)
-  const [showNearMeRadiusSettings, setShowNearMeRadiusSettings] = useState(false)
   const [mapFocusCoords, setMapFocusCoords] = useState(null)
   const [thisWeekOnly, setThisWeekOnly] = useState(false)
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
@@ -371,8 +379,19 @@ function AppInner() {
   const [playStorePromoOpen, setPlayStorePromoOpen] = useState(false)
   const headerRef = useRef(null)
   const [headerHeight, setHeaderHeight] = useState(175)
+  const [isPhoneViewport, setIsPhoneViewport] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia('(max-width: 480px)').matches,
+  )
   const handlePlayStoreBannerVisibility = useCallback((open, meta) => {
     setPlayStorePromoOpen(Boolean(open && meta?.placement !== 'top'))
+  }, [])
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 480px)')
+    const syncPhoneViewport = () => setIsPhoneViewport(media.matches)
+    syncPhoneViewport()
+    media.addEventListener?.('change', syncPhoneViewport)
+    return () => media.removeEventListener?.('change', syncPhoneViewport)
   }, [])
 
   useEffect(() => {
@@ -1546,6 +1565,9 @@ function AppInner() {
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
         .fade-up { animation: fadeUp 0.3s ease forwards; }
         .live-dot { animation: pulse 2s infinite; }
+        .meetmap-header-actions > *, .meetmap-filter-row > * { flex: 0 0 auto; }
+        .meetmap-header-actions, .meetmap-filter-row { scrollbar-width: none; }
+        .meetmap-header-actions::-webkit-scrollbar, .meetmap-filter-row::-webkit-scrollbar { display: none; }
       `}</style>
 
       {/* ── HEADER ── */}
@@ -1554,7 +1576,9 @@ function AppInner() {
         style={{
           background: isLight ? '#F6F6F6' : '#0A0A0A',
           borderBottom: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
-          padding: 'calc(env(safe-area-inset-top) + 14px) 18px 10px',
+          padding: isPhoneViewport
+            ? 'calc(env(safe-area-inset-top) + 12px) 14px 8px'
+            : 'calc(env(safe-area-inset-top) + 14px) 18px 10px',
           position: 'sticky',
           top: 0,
           zIndex: 400,
@@ -1563,11 +1587,12 @@ function AppInner() {
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            alignItems: isPhoneViewport ? 'stretch' : 'center',
             justifyContent: 'space-between',
-            marginBottom: 10,
-            flexWrap: 'wrap',
-            rowGap: 8,
+            marginBottom: isPhoneViewport ? 8 : 10,
+            flexDirection: isPhoneViewport ? 'column' : 'row',
+            flexWrap: isPhoneViewport ? 'nowrap' : 'wrap',
+            rowGap: isPhoneViewport ? 7 : 8,
           }}
         >
           <div>
@@ -1623,13 +1648,17 @@ function AppInner() {
           </div>
 
           <div
+            className="meetmap-header-actions"
             style={{
               display: 'flex',
               gap: 6,
               alignItems: 'center',
-              flexWrap: 'wrap',
-              justifyContent: 'flex-end',
-              marginLeft: 'auto',
+              flexWrap: isPhoneViewport ? 'nowrap' : 'wrap',
+              justifyContent: isPhoneViewport ? 'flex-start' : 'flex-end',
+              marginLeft: isPhoneViewport ? 0 : 'auto',
+              overflowX: isPhoneViewport ? 'auto' : 'visible',
+              paddingBottom: isPhoneViewport ? 2 : 0,
+              WebkitOverflowScrolling: isPhoneViewport ? 'touch' : undefined,
             }}
           >
             {user ? (
@@ -1822,13 +1851,15 @@ function AppInner() {
 
         {/* Filter chips + past toggle */}
         <div
+          className="meetmap-filter-row"
           style={{
             display: 'flex',
             gap: 7,
-            flexWrap: 'wrap',
-            overflowX: 'visible',
-            paddingBottom: 2,
+            flexWrap: isPhoneViewport ? 'nowrap' : 'wrap',
+            overflowX: isPhoneViewport ? 'auto' : 'visible',
+            paddingBottom: isPhoneViewport ? 4 : 2,
             alignItems: 'center',
+            WebkitOverflowScrolling: isPhoneViewport ? 'touch' : undefined,
           }}
         >
           {/* All Events */}
@@ -1881,30 +1912,33 @@ function AppInner() {
             {nearMeLoading ? 'Locating…' : nearMeOnly ? `✓ Near Me` : `Near Me`}
           </button>
 
-          <button
-            onClick={() => setShowNearMeRadiusSettings((open) => !open)}
-            style={{
-              background: showNearMeRadiusSettings
-                ? isLight
-                  ? '#FFF3ED'
-                  : '#20140F'
-                : filterChipBg,
-              color: showNearMeRadiusSettings ? (isLight ? '#D1491A' : '#FF8A5C') : filterChipText,
-              border: '1px solid',
-              borderColor: showNearMeRadiusSettings ? '#FF6B35' : filterChipBorder,
-              borderRadius: 20,
-              padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}
-            title="Adjust the Near Me search radius"
-          >
-            Radius: {nearMeRadiusMiles} mi
-          </button>
+          {nearMeOnly && (
+            <select
+              value={nearMeRadiusMiles}
+              onChange={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
+              aria-label="Near Me radius"
+              title="Adjust the Near Me search radius"
+              style={{
+                background: isLight ? '#FFF3ED' : '#20140F',
+                color: isLight ? '#D1491A' : '#FF8A5C',
+                border: '1px solid #FF6B35',
+                borderRadius: 20,
+                padding: '5px 28px 5px 11px',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              {NEAR_ME_RADIUS_OPTIONS.map((radius) => (
+                <option key={radius} value={radius}>
+                  {radius} mi
+                </option>
+              ))}
+            </select>
+          )}
 
           {/* This Week */}
           <button
@@ -1992,111 +2026,6 @@ function AppInner() {
             {showSavedOnly ? `★ Saved (${savedEventIds.length})` : 'Saved'}
           </button>
         </div>
-
-        {showNearMeRadiusSettings && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: 12,
-              border: `1px solid ${isLight ? '#F0C3B3' : '#3A241C'}`,
-              borderRadius: 14,
-              background: isLight ? '#FFF8F5' : '#140D0A',
-              color: isLight ? '#222' : '#F0F0F0',
-              fontFamily: "'DM Sans', sans-serif",
-              boxShadow: isLight
-                ? '0 8px 24px rgba(10, 10, 10, 0.08)'
-                : '0 8px 24px rgba(0, 0, 0, 0.28)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                marginBottom: 10,
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>
-                  Near Me Radius
-                </div>
-                <div style={{ fontSize: 12, color: isLight ? '#6B625E' : '#A8A8A8' }}>
-                  Showing events within {nearMeRadiusMiles} miles.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowNearMeRadiusSettings(false)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: isLight ? '#6B625E' : '#A8A8A8',
-                  cursor: 'pointer',
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: 18,
-                  lineHeight: 1,
-                  padding: 4,
-                }}
-                aria-label="Close radius settings"
-              >
-                ×
-              </button>
-            </div>
-            <input
-              type="range"
-              min={MIN_NEAR_ME_RADIUS_MILES}
-              max={MAX_NEAR_ME_RADIUS_MILES}
-              step={NEAR_ME_RADIUS_STEP_MILES}
-              value={nearMeRadiusMiles}
-              onChange={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
-              aria-label="Near Me radius in miles"
-              style={{ width: '100%', accentColor: '#FF6B35' }}
-            />
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginTop: 4,
-                color: isLight ? '#6B625E' : '#A8A8A8',
-                fontSize: 11,
-              }}
-            >
-              <span>{MIN_NEAR_ME_RADIUS_MILES} mi</span>
-              <span>{MAX_NEAR_ME_RADIUS_MILES} mi</span>
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-              {[10, 25, 50, 100].map((radius) => (
-                <button
-                  key={radius}
-                  type="button"
-                  onClick={() => setNearMeRadiusMiles(radius)}
-                  style={{
-                    border: '1px solid',
-                    borderColor: nearMeRadiusMiles === radius ? '#FF6B35' : filterChipBorder,
-                    borderRadius: 999,
-                    background:
-                      nearMeRadiusMiles === radius
-                        ? isLight
-                          ? '#FFE8DE'
-                          : '#26140E'
-                        : isLight
-                          ? '#FFFFFF'
-                          : '#1A1A1A',
-                    color: nearMeRadiusMiles === radius ? '#D1491A' : filterChipText,
-                    cursor: 'pointer',
-                    fontFamily: "'DM Sans', sans-serif",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    padding: '5px 10px',
-                  }}
-                >
-                  {radius} mi
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {nearMeError && (
           <div
