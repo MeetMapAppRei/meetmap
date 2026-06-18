@@ -1546,15 +1546,6 @@ function AppInner() {
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
         .fade-up { animation: fadeUp 0.3s ease forwards; }
         .live-dot { animation: pulse 2s infinite; }
-        @media (min-width: 768px) {
-          .meetmap-app-shell { max-width: 480px !important; margin: 0 auto !important; }
-          .meetmap-bottom-nav {
-            left: 50% !important;
-            right: auto !important;
-            transform: translateX(-50%) !important;
-            max-width: 480px !important;
-          }
-        }
       `}</style>
 
       {/* ── HEADER ── */}

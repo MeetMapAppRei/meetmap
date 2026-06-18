@@ -5,7 +5,7 @@ import { useTheme } from '../lib/useTheme'
 
 const STORAGE_KEY = 'meetmap:android-app-promo-snooze-until'
 const SNOOZE_MS = 10 * 24 * 60 * 60 * 1000
-const DESKTOP_MQ = '(min-width: 768px)'
+const DESKTOP_MQ = '(min-width: 1024px) and (pointer: fine)'
 
 const defaultPlayUrl = 'https://play.google.com/store/apps/details?id=com.meetmap.app'
 
