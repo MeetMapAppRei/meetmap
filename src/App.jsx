@@ -129,6 +129,23 @@ const getStatusNotifiedStorageKey = (user) => `meetmap:status-notified:${user?.i
 const getUpdateSnapshotStorageKey = (user) => `meetmap:update-snapshot:${user?.id || 'anon'}`
 const getUpdateNotifiedStorageKey = (user) => `meetmap:update-notified:${user?.id || 'anon'}`
 const NATIVE_PUSH_TOKEN_STORAGE_KEY = 'meetmap:native-push-token'
+const NEAR_ME_RADIUS_STORAGE_KEY = 'meetmap:near-me-radius-miles'
+const DEFAULT_NEAR_ME_RADIUS_MILES = 25
+const MIN_NEAR_ME_RADIUS_MILES = 5
+const MAX_NEAR_ME_RADIUS_MILES = 100
+const NEAR_ME_RADIUS_STEP_MILES = 5
+
+const clampNearMeRadiusMiles = (value) => {
+  const radius = Number(value)
+  if (!Number.isFinite(radius)) return DEFAULT_NEAR_ME_RADIUS_MILES
+  return Math.min(
+    MAX_NEAR_ME_RADIUS_MILES,
+    Math.max(
+      MIN_NEAR_ME_RADIUS_MILES,
+      Math.round(radius / NEAR_ME_RADIUS_STEP_MILES) * NEAR_ME_RADIUS_STEP_MILES,
+    ),
+  )
+}
 
 const getStoredNativePushToken = () => {
   if (typeof window === 'undefined') return ''
@@ -136,6 +153,16 @@ const getStoredNativePushToken = () => {
     return String(window.localStorage.getItem(NATIVE_PUSH_TOKEN_STORAGE_KEY) || '').trim()
   } catch {
     return ''
+  }
+}
+
+const getStoredNearMeRadiusMiles = () => {
+  if (typeof window === 'undefined') return DEFAULT_NEAR_ME_RADIUS_MILES
+  try {
+    const stored = window.localStorage.getItem(NEAR_ME_RADIUS_STORAGE_KEY)
+    return stored ? clampNearMeRadiusMiles(stored) : DEFAULT_NEAR_ME_RADIUS_MILES
+  } catch {
+    return DEFAULT_NEAR_ME_RADIUS_MILES
   }
 }
 
@@ -331,11 +358,12 @@ function AppInner() {
   const [importError, setImportError] = useState(null)
   const [importUploading, setImportUploading] = useState(false)
 
-  const RADIUS_MILES = 25
   const [nearMeOnly, setNearMeOnly] = useState(false)
   const [nearMeCoords, setNearMeCoords] = useState(null)
   const [nearMeError, setNearMeError] = useState('')
   const [nearMeLoading, setNearMeLoading] = useState(false)
+  const [nearMeRadiusMiles, setNearMeRadiusMiles] = useState(getStoredNearMeRadiusMiles)
+  const [showNearMeRadiusSettings, setShowNearMeRadiusSettings] = useState(false)
   const [mapFocusCoords, setMapFocusCoords] = useState(null)
   const [thisWeekOnly, setThisWeekOnly] = useState(false)
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
@@ -610,6 +638,12 @@ function AppInner() {
   }, [user, savedEventIds])
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(NEAR_ME_RADIUS_STORAGE_KEY, String(nearMeRadiusMiles))
+    } catch {}
+  }, [nearMeRadiusMiles])
+
+  useEffect(() => {
     const nativeSupported = isNativePushSupported()
     if (!nativeSupported) {
       setNotificationPermission(getWebNotificationPermission())
@@ -864,7 +898,7 @@ function AppInner() {
             (e) =>
               Number.isFinite(e.lat) &&
               Number.isFinite(e.lng) &&
-              distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= RADIUS_MILES,
+              distanceMiles(nearMeCoords.lat, nearMeCoords.lng, e.lat, e.lng) <= nearMeRadiusMiles,
           )
           .sort((a, b) => {
             const aStart = eventStartMs(a) ?? Number.POSITIVE_INFINITY
@@ -1823,6 +1857,31 @@ function AppInner() {
             {nearMeLoading ? 'Locating…' : nearMeOnly ? `✓ Near Me` : `Near Me`}
           </button>
 
+          <button
+            onClick={() => setShowNearMeRadiusSettings((open) => !open)}
+            style={{
+              background: showNearMeRadiusSettings
+                ? isLight
+                  ? '#FFF3ED'
+                  : '#20140F'
+                : filterChipBg,
+              color: showNearMeRadiusSettings ? (isLight ? '#D1491A' : '#FF8A5C') : filterChipText,
+              border: '1px solid',
+              borderColor: showNearMeRadiusSettings ? '#FF6B35' : filterChipBorder,
+              borderRadius: 20,
+              padding: '5px 13px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+            title="Adjust the Near Me search radius"
+          >
+            Radius: {nearMeRadiusMiles} mi
+          </button>
+
           {/* This Week */}
           <button
             onClick={() => setThisWeekOnly((v) => !v)}
@@ -1909,6 +1968,111 @@ function AppInner() {
             {showSavedOnly ? `★ Saved (${savedEventIds.length})` : 'Saved'}
           </button>
         </div>
+
+        {showNearMeRadiusSettings && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: 12,
+              border: `1px solid ${isLight ? '#F0C3B3' : '#3A241C'}`,
+              borderRadius: 14,
+              background: isLight ? '#FFF8F5' : '#140D0A',
+              color: isLight ? '#222' : '#F0F0F0',
+              fontFamily: "'DM Sans', sans-serif",
+              boxShadow: isLight
+                ? '0 8px 24px rgba(10, 10, 10, 0.08)'
+                : '0 8px 24px rgba(0, 0, 0, 0.28)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>
+                  Near Me Radius
+                </div>
+                <div style={{ fontSize: 12, color: isLight ? '#6B625E' : '#A8A8A8' }}>
+                  Showing events within {nearMeRadiusMiles} miles.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNearMeRadiusSettings(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: isLight ? '#6B625E' : '#A8A8A8',
+                  cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 18,
+                  lineHeight: 1,
+                  padding: 4,
+                }}
+                aria-label="Close radius settings"
+              >
+                ×
+              </button>
+            </div>
+            <input
+              type="range"
+              min={MIN_NEAR_ME_RADIUS_MILES}
+              max={MAX_NEAR_ME_RADIUS_MILES}
+              step={NEAR_ME_RADIUS_STEP_MILES}
+              value={nearMeRadiusMiles}
+              onChange={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
+              aria-label="Near Me radius in miles"
+              style={{ width: '100%', accentColor: '#FF6B35' }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginTop: 4,
+                color: isLight ? '#6B625E' : '#A8A8A8',
+                fontSize: 11,
+              }}
+            >
+              <span>{MIN_NEAR_ME_RADIUS_MILES} mi</span>
+              <span>{MAX_NEAR_ME_RADIUS_MILES} mi</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+              {[10, 25, 50, 100].map((radius) => (
+                <button
+                  key={radius}
+                  type="button"
+                  onClick={() => setNearMeRadiusMiles(radius)}
+                  style={{
+                    border: '1px solid',
+                    borderColor: nearMeRadiusMiles === radius ? '#FF6B35' : filterChipBorder,
+                    borderRadius: 999,
+                    background:
+                      nearMeRadiusMiles === radius
+                        ? isLight
+                          ? '#FFE8DE'
+                          : '#26140E'
+                        : isLight
+                          ? '#FFFFFF'
+                          : '#1A1A1A',
+                    color: nearMeRadiusMiles === radius ? '#D1491A' : filterChipText,
+                    cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: '5px 10px',
+                  }}
+                >
+                  {radius} mi
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {nearMeError && (
           <div
