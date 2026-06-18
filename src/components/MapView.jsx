@@ -15,7 +15,13 @@ const TYPE_COLORS = {
   cruise: '#7CFF6B',
 }
 
-export default function MapView({ events, onSelectEvent, centerOn, bottomNavHeight = 110 }) {
+export default function MapView({
+  events,
+  onSelectEvent,
+  centerOn,
+  bottomNavHeight = 110,
+  headerHeight = 175,
+}) {
   const mapContainer = useRef(null)
   const map = useRef(null)
   const markersRef = useRef([])
@@ -124,14 +130,23 @@ export default function MapView({ events, onSelectEvent, centerOn, bottomNavHeig
   }, [events, mapLoaded, onSelectEvent])
 
   if (mapboxError || !MAPBOX_TOKEN || MAPBOX_TOKEN === 'YOUR_MAPBOX_PUBLIC_TOKEN') {
-    return <FallbackMap events={events} onSelectEvent={onSelectEvent} />
+    return (
+      <FallbackMap
+        events={events}
+        onSelectEvent={onSelectEvent}
+        bottomNavHeight={bottomNavHeight}
+        headerHeight={headerHeight}
+      />
+    )
   }
+
+  const mapHeight = `max(320px, calc(100dvh - ${headerHeight}px - ${bottomNavHeight}px - env(safe-area-inset-bottom)))`
 
   return (
     <div
       style={{
         position: 'relative',
-        height: `calc(100vh - 175px - ${bottomNavHeight}px - env(safe-area-inset-bottom))`,
+        height: mapHeight,
       }}
     >
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
@@ -164,13 +179,14 @@ function getIcon(type) {
 }
 
 // Shown if Mapbox token not yet configured
-function FallbackMap({ events, onSelectEvent }) {
+function FallbackMap({ events, onSelectEvent, bottomNavHeight = 110, headerHeight = 175 }) {
   const eventsWithCoords = events.filter((e) => e.lat && e.lng)
+  const mapHeight = `max(320px, calc(100dvh - ${headerHeight}px - ${bottomNavHeight}px - env(safe-area-inset-bottom)))`
 
   return (
     <div
       style={{
-        height: `calc(100vh - 175px - 110px - env(safe-area-inset-bottom))`,
+        height: mapHeight,
         background: '#0D0D0D',
         position: 'relative',
         overflow: 'hidden',

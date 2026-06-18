@@ -369,8 +369,27 @@ function AppInner() {
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
   const PLAY_STORE_PROMO_RESERVE = 132 // Extra scroll space when the Play Store promo strip is open above the nav.
   const [playStorePromoOpen, setPlayStorePromoOpen] = useState(false)
+  const headerRef = useRef(null)
+  const [headerHeight, setHeaderHeight] = useState(175)
   const handlePlayStoreBannerVisibility = useCallback((open, meta) => {
     setPlayStorePromoOpen(Boolean(open && meta?.placement !== 'top'))
+  }, [])
+
+  useEffect(() => {
+    if (!headerRef.current || typeof ResizeObserver === 'undefined') return undefined
+    const header = headerRef.current
+    const syncHeaderHeight = () => {
+      const nextHeight = Math.ceil(header.getBoundingClientRect().height)
+      if (nextHeight > 0) setHeaderHeight(nextHeight)
+    }
+    syncHeaderHeight()
+    const observer = new ResizeObserver(syncHeaderHeight)
+    observer.observe(header)
+    window.addEventListener('resize', syncHeaderHeight)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', syncHeaderHeight)
+    }
   }, [])
 
   // Allow map overlay button to open the Post modal without prop drilling.
@@ -1501,13 +1520,15 @@ function AppInner() {
 
   return (
     <div
+      className="meetmap-app-shell"
       style={{
         fontFamily: "'Bebas Neue', 'Impact', sans-serif",
         background: isLight ? '#F6F6F6' : '#0A0A0A',
-        minHeight: '100vh',
+        minHeight: '100dvh',
         color: isLight ? '#111111' : '#F0F0F0',
-        maxWidth: 480,
-        margin: '0 auto',
+        width: '100%',
+        margin: 0,
+        overflowX: 'hidden',
         position: 'relative',
         paddingTop: 'var(--meetmap-play-promo-top, 0px)',
       }}
@@ -1515,6 +1536,8 @@ function AppInner() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body, #root { width: 100%; min-height: 100%; }
+        body { margin: 0; overflow-x: hidden; background: ${isLight ? '#F6F6F6' : '#0A0A0A'}; }
         ::-webkit-scrollbar { width: 3px; }
         ::-webkit-scrollbar-thumb { background: #FF6B35; border-radius: 2px; }
         input, textarea, select { outline: none !important; }
@@ -1523,10 +1546,20 @@ function AppInner() {
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
         .fade-up { animation: fadeUp 0.3s ease forwards; }
         .live-dot { animation: pulse 2s infinite; }
+        @media (min-width: 768px) {
+          .meetmap-app-shell { max-width: 480px !important; margin: 0 auto !important; }
+          .meetmap-bottom-nav {
+            left: 50% !important;
+            right: auto !important;
+            transform: translateX(-50%) !important;
+            max-width: 480px !important;
+          }
+        }
       `}</style>
 
       {/* ── HEADER ── */}
       <div
+        ref={headerRef}
         style={{
           background: isLight ? '#F6F6F6' : '#0A0A0A',
           borderBottom: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
@@ -2102,6 +2135,7 @@ function AppInner() {
             bottomNavHeight={
               BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)
             }
+            headerHeight={headerHeight}
           />
           <FirstEventNudge
             bottomOffsetPx={BOTTOM_NAV_HEIGHT + (playStorePromoOpen ? PLAY_STORE_PROMO_RESERVE : 0)}
@@ -2281,18 +2315,21 @@ function AppInner() {
 
       {/* ── BOTTOM NAV ── */}
       <div
+        className="meetmap-bottom-nav"
         style={{
           position: 'fixed',
-          bottom: 'env(safe-area-inset-bottom)',
-          left: '50%',
-          transform: 'translateX(-50%)',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          transform: 'none',
           width: '100%',
-          maxWidth: 480,
+          maxWidth: 'none',
           background: isLight ? '#F6F6F6' : '#0A0A0A',
           borderTop: `1px solid ${isLight ? '#E5E5E5' : '#171717'}`,
           display: 'flex',
           justifyContent: 'space-around',
-          padding: '10px 0 20px',
+          padding:
+            '10px max(0px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left))',
           zIndex: 200,
         }}
       >
