@@ -32,19 +32,6 @@ const STATUS_META = {
   delayed: { label: 'Delayed', fg: '#FFD700', bg: '#FFD70022' },
   canceled: { label: 'Canceled', fg: '#FF6060', bg: '#FF353522' },
 }
-const AGENT_DEBUG_RUN_ID = 'initial'
-const agentDebugLog = (payload) => {
-  fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'de8af0' },
-    body: JSON.stringify({
-      sessionId: 'de8af0',
-      runId: AGENT_DEBUG_RUN_ID,
-      ...payload,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-}
 const formatRelativeTime = (value) => {
   const ms = value ? new Date(value).getTime() : NaN
   if (!Number.isFinite(ms)) return ''
@@ -521,21 +508,14 @@ export default function EventDetail({
   const touchStartRef = useRef(null)
 
   useEffect(() => {
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: 'H5',
-      location: 'src/components/EventDetail.jsx:initialEventPropEffect',
-      message: 'EventDetail prop event compared to internal event state',
-      data: {
-        propId: initialEvent?.id || null,
-        propTitle: initialEvent?.title || null,
-        internalId: event?.id || null,
-        internalTitle: event?.title || null,
-        sameId: initialEvent?.id === event?.id,
-      },
-    })
-    // #endregion
-  }, [event, initialEvent])
+    if (!initialEvent?.id) return
+    if (initialEvent.id === event?.id) return
+    setEvent(initialEvent)
+    setEditing(false)
+    setExpandedPhoto(false)
+    setConfirmDelete(false)
+    setShowReport(false)
+  }, [event?.id, initialEvent])
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
   const statusKey = ['active', 'moved', 'delayed', 'canceled'].includes(
