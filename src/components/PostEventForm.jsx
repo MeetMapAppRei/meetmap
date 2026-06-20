@@ -463,6 +463,9 @@ export default function PostEventForm({ onClose, onPosted }) {
   /** YYYY-MM-DD list from last flyer scan (shown when 2+ dates). */
   const [flyerDates, setFlyerDates] = useState([])
   const [prefillBanner, setPrefillBanner] = useState(false)
+  const [isNarrowSheet, setIsNarrowSheet] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia('(max-width: 560px)').matches,
+  )
 
   useEffect(() => {
     const snap = loadAndConsumePostPrefill()
@@ -491,14 +494,31 @@ export default function PostEventForm({ onClose, onPosted }) {
     })
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const media = window.matchMedia('(max-width: 560px)')
+    const sync = () => setIsNarrowSheet(media.matches)
+    sync()
+    media.addEventListener?.('change', sync)
+    return () => media.removeEventListener?.('change', sync)
+  }, [])
+
   const overlayStyle = {
     ...S.overlay,
     background: isLight ? 'rgba(0,0,0,0.28)' : S.overlay.background,
+    alignItems: isNarrowSheet ? 'flex-end' : 'center',
+    padding: isNarrowSheet ? 0 : 16,
   }
   const sheetStyle = {
     ...S.sheet,
     background: isLight ? '#FFFFFF' : S.sheet.background,
     border: `1px solid ${isLight ? '#E5E5E5' : '#1A1A1A'}`,
+    width: isNarrowSheet ? '100%' : 'min(560px, calc(100vw - 32px))',
+    maxWidth: isNarrowSheet ? 480 : 560,
+    borderRadius: isNarrowSheet ? S.sheet.borderRadius : 18,
+    maxHeight: isNarrowSheet ? S.sheet.maxHeight : 'calc(100dvh - 32px)',
+    overflowX: 'hidden',
+    padding: isNarrowSheet ? S.sheet.padding : '24px 24px 18px',
   }
   const labelStyle = { ...S.label, color: isLight ? '#666' : S.label.color }
   const inputStyle = {
@@ -507,6 +527,7 @@ export default function PostEventForm({ onClose, onPosted }) {
     border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
     color: isLight ? '#111111' : S.input.color,
     colorScheme: isLight ? 'light' : 'dark',
+    minWidth: 0,
   }
   const selectStyle = {
     ...S.select,
@@ -514,6 +535,7 @@ export default function PostEventForm({ onClose, onPosted }) {
     border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
     color: isLight ? '#111111' : S.select.color,
     colorScheme: isLight ? 'light' : 'dark',
+    minWidth: 0,
   }
   const closeColor = isLight ? '#666' : '#555'
   const missingHintStyle = {
@@ -563,6 +585,8 @@ export default function PostEventForm({ onClose, onPosted }) {
     background: isLight
       ? 'linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.92) 35%, rgba(255,255,255,0.98))'
       : S.stickySubmitBar.background,
+    marginLeft: -2,
+    marginRight: -2,
   }
 
   const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }))
@@ -901,7 +925,7 @@ export default function PostEventForm({ onClose, onPosted }) {
               gap: 10,
             }}
           >
-            <span>
+            <span style={{ minWidth: 0, lineHeight: 1.4 }}>
               Restored from your last post for this multi-date flyer (saved a few days if you close
               the tab). The next date is selected when more than one remains. Add a photo again if
               you want one on the listing.
@@ -948,13 +972,14 @@ export default function PostEventForm({ onClose, onPosted }) {
           }}
         >
           <div style={{ fontSize: 28 }}>{scanning ? '⏳' : flyerSuccess ? '✅' : '📸'}</div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
                 fontFamily: "'Bebas Neue', sans-serif",
                 fontSize: 16,
                 letterSpacing: 1.5,
                 color: flyerSuccess ? '#7CFF6B' : '#FF6B35',
+                overflowWrap: 'anywhere',
               }}
             >
               {scanning
@@ -969,6 +994,7 @@ export default function PostEventForm({ onClose, onPosted }) {
                 fontSize: 11,
                 color: geocodeText,
                 marginTop: 2,
+                overflowWrap: 'anywhere',
               }}
             >
               {scanning
@@ -988,6 +1014,7 @@ export default function PostEventForm({ onClose, onPosted }) {
                 borderTopColor: 'transparent',
                 borderRadius: '50%',
                 animation: 'spin 0.8s linear infinite',
+                flexShrink: 0,
               }}
             />
           )}
@@ -1162,7 +1189,13 @@ export default function PostEventForm({ onClose, onPosted }) {
           onChange={(e) => set('tags', e.target.value)}
         />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isNarrowSheet ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: isNarrowSheet ? 0 : 10,
+          }}
+        >
           <div>
             <label style={labelStyle}>Date *</label>
             <input

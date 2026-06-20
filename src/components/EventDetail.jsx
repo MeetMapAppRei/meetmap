@@ -32,6 +32,19 @@ const STATUS_META = {
   delayed: { label: 'Delayed', fg: '#FFD700', bg: '#FFD70022' },
   canceled: { label: 'Canceled', fg: '#FF6060', bg: '#FF353522' },
 }
+const AGENT_DEBUG_RUN_ID = 'initial'
+const agentDebugLog = (payload) => {
+  fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'de8af0' },
+    body: JSON.stringify({
+      sessionId: 'de8af0',
+      runId: AGENT_DEBUG_RUN_ID,
+      ...payload,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+}
 const formatRelativeTime = (value) => {
   const ms = value ? new Date(value).getTime() : NaN
   if (!Number.isFinite(ms)) return ''
@@ -479,6 +492,9 @@ export default function EventDetail({
   onAuthNeeded,
   onDeleted,
   onUpdated,
+  onPrevious,
+  onNext,
+  eventPosition,
 }) {
   const { user } = useAuth()
   const { isLight } = useTheme()
@@ -499,8 +515,27 @@ export default function EventDetail({
   const [postingUpdate, setPostingUpdate] = useState(false)
   const [toast, setToast] = useState('')
   const [showReport, setShowReport] = useState(false)
+  const [expandedPhoto, setExpandedPhoto] = useState(false)
   const bottomRef = useRef()
   const coordRepairRef = useRef(null)
+  const touchStartRef = useRef(null)
+
+  useEffect(() => {
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H5',
+      location: 'src/components/EventDetail.jsx:initialEventPropEffect',
+      message: 'EventDetail prop event compared to internal event state',
+      data: {
+        propId: initialEvent?.id || null,
+        propTitle: initialEvent?.title || null,
+        internalId: event?.id || null,
+        internalTitle: event?.title || null,
+        sameId: initialEvent?.id === event?.id,
+      },
+    })
+    // #endregion
+  }, [event, initialEvent])
 
   const color = TYPE_COLORS[event.type] || '#FF6B35'
   const statusKey = ['active', 'moved', 'delayed', 'canceled'].includes(
@@ -680,6 +715,24 @@ export default function EventDetail({
     }
   }
 
+  const handleTouchStart = (e) => {
+    const touch = e.touches?.[0]
+    if (!touch) return
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  const handleTouchEnd = (e) => {
+    const start = touchStartRef.current
+    const touch = e.changedTouches?.[0]
+    touchStartRef.current = null
+    if (!start || !touch) return
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.25) return
+    if (dx < 0) onNext?.()
+    else onPrevious?.()
+  }
+
   const overlayBg = isLight ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.92)'
   const panelBg = isLight ? '#FFFFFF' : '#0F0F0F'
   const panelBorder = isLight ? '#E5E5E5' : '#1A1A1A'
@@ -747,6 +800,8 @@ export default function EventDetail({
     >
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
       <div
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         style={{
           width: '100%',
           maxWidth: 480,
@@ -761,11 +816,14 @@ export default function EventDetail({
         {/* Hero image or color band */}
         {event.photo_url ? (
           <div
+            onClick={() => setExpandedPhoto(true)}
             style={{
               position: 'relative',
               height: 320,
               background: isLight ? '#F2F2F2' : '#0B0B0B',
+              cursor: 'zoom-in',
             }}
+            title="Tap to expand flyer"
           >
             <img
               src={event.photo_url}
@@ -779,8 +837,27 @@ export default function EventDetail({
               }}
               alt={event.title}
             />
+            <div
+              style={{
+                position: 'absolute',
+                left: 14,
+                bottom: 14,
+                background: closeBg,
+                color: closeColor,
+                borderRadius: 999,
+                padding: '6px 10px',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              Tap to expand
+            </div>
             <button
-              onClick={onClose}
+              onClick={(e) => {
+                e.stopPropagation()
+                onClose()
+              }}
               style={{
                 position: 'absolute',
                 top: 14,
@@ -888,6 +965,70 @@ export default function EventDetail({
           >
             {event.title}
           </h2>
+          {(onPrevious || onNext) && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                marginBottom: 12,
+              }}
+            >
+              <button
+                type="button"
+                onClick={onPrevious}
+                disabled={!onPrevious}
+                style={{
+                  flex: 1,
+                  background: shareBg,
+                  color: onPrevious ? shareText : muted2,
+                  border: `1px solid ${shareBorder}`,
+                  borderRadius: 999,
+                  padding: '8px 10px',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: onPrevious ? 'pointer' : 'default',
+                  opacity: onPrevious ? 1 : 0.5,
+                }}
+              >
+                ← Previous
+              </button>
+              {eventPosition && (
+                <div
+                  style={{
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: 11,
+                    color: muted,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {eventPosition.current} of {eventPosition.total}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={onNext}
+                disabled={!onNext}
+                style={{
+                  flex: 1,
+                  background: shareBg,
+                  color: onNext ? shareText : muted2,
+                  border: `1px solid ${shareBorder}`,
+                  borderRadius: 999,
+                  padding: '8px 10px',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: onNext ? 'pointer' : 'default',
+                  opacity: onNext ? 1 : 0.5,
+                }}
+              >
+                Next →
+              </button>
+            </div>
+          )}
           {statusKey !== 'active' && (
             <div
               style={{
@@ -1391,6 +1532,58 @@ export default function EventDetail({
           onAuthNeeded={onAuthNeeded}
           onClose={() => setShowReport(false)}
         />
+      )}
+
+      {expandedPhoto && event.photo_url && (
+        <div
+          onClick={() => setExpandedPhoto(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1300,
+            background: 'rgba(0,0,0,0.96)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={event.photo_url}
+            alt={event.title}
+            style={{
+              width: '100%',
+              height: '100%',
+              maxWidth: 960,
+              maxHeight: '92vh',
+              objectFit: 'contain',
+            }}
+          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setExpandedPhoto(false)
+            }}
+            style={{
+              position: 'fixed',
+              top: 16,
+              right: 16,
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              border: 'none',
+              background: 'rgba(255,255,255,0.16)',
+              color: '#fff',
+              fontSize: 26,
+              cursor: 'pointer',
+            }}
+            aria-label="Close expanded flyer"
+          >
+            ×
+          </button>
+        </div>
       )}
 
       {showUpdateComposer && (

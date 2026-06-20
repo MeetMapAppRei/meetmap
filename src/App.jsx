@@ -134,15 +134,19 @@ const DEFAULT_NEAR_ME_RADIUS_MILES = 25
 const MIN_NEAR_ME_RADIUS_MILES = 5
 const MAX_NEAR_ME_RADIUS_MILES = 100
 const NEAR_ME_RADIUS_STEP_MILES = 5
-const NEAR_ME_RADIUS_OPTIONS = Array.from(
-  {
-    length:
-      Math.floor(
-        (MAX_NEAR_ME_RADIUS_MILES - MIN_NEAR_ME_RADIUS_MILES) / NEAR_ME_RADIUS_STEP_MILES,
-      ) + 1,
-  },
-  (_, i) => MIN_NEAR_ME_RADIUS_MILES + i * NEAR_ME_RADIUS_STEP_MILES,
-)
+const AGENT_DEBUG_RUN_ID = 'initial'
+const agentDebugLog = (payload) => {
+  fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'de8af0' },
+    body: JSON.stringify({
+      sessionId: 'de8af0',
+      runId: AGENT_DEBUG_RUN_ID,
+      ...payload,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+}
 
 const clampNearMeRadiusMiles = (value) => {
   const radius = Number(value)
@@ -272,6 +276,37 @@ const weekRangeKeysLocal = (now = new Date()) => {
   return { startKey: toDateKeyLocal(start), endKey: toDateKeyLocal(end) }
 }
 
+const WEEKDAY_OPTIONS = [
+  { value: 'all', label: 'All Week' },
+  { value: '1', label: 'Monday' },
+  { value: '2', label: 'Tuesday' },
+  { value: '3', label: 'Wednesday' },
+  { value: '4', label: 'Thursday' },
+  { value: '5', label: 'Friday' },
+  { value: '6', label: 'Saturday' },
+  { value: '0', label: 'Sunday' },
+]
+
+const EVENT_TYPE_OPTIONS = [
+  { value: 'all', label: 'All Events' },
+  { value: 'meet', label: 'Meet' },
+  { value: 'car show', label: 'Car Show' },
+  { value: 'track day', label: 'Track Day' },
+  { value: 'cruise', label: 'Cruise' },
+]
+
+const DATE_SORT_OPTIONS = [
+  { value: 'soonest', label: 'Soonest First' },
+  { value: 'latest', label: 'Latest First' },
+]
+
+const weekdayValueForDateKey = (dateKey) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ''))) return ''
+  const d = new Date(`${dateKey}T12:00:00`)
+  if (!Number.isFinite(d.getTime())) return ''
+  return String(d.getDay())
+}
+
 function AppInner() {
   const { user, loading: authLoading, passwordRecovery, clearPasswordRecovery } = useAuth()
   const { toggleTheme, isLight } = useTheme()
@@ -374,6 +409,9 @@ function AppInner() {
   const [nearMeRadiusMiles, setNearMeRadiusMiles] = useState(getStoredNearMeRadiusMiles)
   const [mapFocusCoords, setMapFocusCoords] = useState(null)
   const [thisWeekOnly, setThisWeekOnly] = useState(false)
+  const [thisWeekDay, setThisWeekDay] = useState('all')
+  const [dateSort, setDateSort] = useState('soonest')
+  const [filterMenuOpen, setFilterMenuOpen] = useState(null)
   const BOTTOM_NAV_HEIGHT = 110 // Reserve space so fixed bottom nav doesn't cover map/list.
   const PLAY_STORE_PROMO_RESERVE = 132 // Extra scroll space when the Play Store promo strip is open above the nav.
   const [playStorePromoOpen, setPlayStorePromoOpen] = useState(false)
@@ -955,7 +993,8 @@ function AppInner() {
         .filter((e) => {
           const k = String(e?.date || '')
           if (!k || !thisWeekStartKey || !thisWeekEndKey) return false
-          return k >= thisWeekStartKey && k <= thisWeekEndKey
+          if (k < thisWeekStartKey || k > thisWeekEndKey) return false
+          return thisWeekDay === 'all' || weekdayValueForDateKey(k) === thisWeekDay
         })
         .sort((a, b) => {
           const aStart = eventStartMs(a) ?? Number.POSITIVE_INFINITY
@@ -971,16 +1010,98 @@ function AppInner() {
           .sort((a, b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')))
       : eventsFilteredForWeek
 
+  const sortedEventsForCurrentView =
+    view === 'mine' && user
+      ? eventsForCurrentView
+      : [...eventsForCurrentView].sort((a, b) => {
+          const aStart = eventStartMs(a) ?? Number.POSITIVE_INFINITY
+          const bStart = eventStartMs(b) ?? Number.POSITIVE_INFINITY
+          return dateSort === 'latest' ? bStart - aStart : aStart - bStart
+        })
+
   const eventsBeforeClientFilters =
     view === 'mine' && user
       ? filteredDedupedEvents.filter((e) => e?.user_id === user.id)
       : filteredDedupedEvents
   const eventsHiddenByClientFilters = Math.max(
     0,
-    eventsBeforeClientFilters.length - eventsForCurrentView.length,
+    eventsBeforeClientFilters.length - sortedEventsForCurrentView.length,
   )
 
-  const upcomingCount = eventsForCurrentView.filter((e) => e.date >= todayKey).length
+  const upcomingCount = sortedEventsForCurrentView.filter((e) => e.date >= todayKey).length
+
+  const selectedEventIndex = selectedEvent
+    ? sortedEventsForCurrentView.findIndex((e) => e.id === selectedEvent.id)
+    : -1
+  const canShowPreviousEvent = selectedEventIndex > 0
+  const canShowNextEvent =
+    selectedEventIndex >= 0 && selectedEventIndex < sortedEventsForCurrentView.length - 1
+  const openEventAtOffset = useCallback(
+    (offset) => {
+      if (selectedEventIndex < 0) return
+      const next = sortedEventsForCurrentView[selectedEventIndex + offset]
+      if (next) {
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: 'H4',
+          location: 'src/App.jsx:openEventAtOffset',
+          message: 'Event detail navigation selected next event',
+          data: {
+            offset,
+            selectedEventIndex,
+            currentId: selectedEvent?.id || null,
+            currentTitle: selectedEvent?.title || null,
+            nextId: next.id,
+            nextTitle: next.title,
+            total: sortedEventsForCurrentView.length,
+          },
+        })
+        // #endregion
+        setSelectedEvent(next)
+      }
+    },
+    [selectedEvent, selectedEventIndex, sortedEventsForCurrentView],
+  )
+
+  useEffect(() => {
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H2,H3,H4',
+      location: 'src/App.jsx:derivedViewState',
+      message: 'Derived filter and selected event state changed',
+      data: {
+        view,
+        filterType,
+        filterMenuOpen,
+        nearMeOnly,
+        hasNearMeCoords: Boolean(nearMeCoords),
+        nearMeError,
+        thisWeekOnly,
+        thisWeekDay,
+        showSavedOnly,
+        eventsCount: events.length,
+        displayedCount: sortedEventsForCurrentView.length,
+        selectedEventId: selectedEvent?.id || null,
+        selectedEventTitle: selectedEvent?.title || null,
+        selectedEventIndex,
+      },
+    })
+    // #endregion
+  }, [
+    events.length,
+    filterMenuOpen,
+    filterType,
+    nearMeCoords,
+    nearMeError,
+    nearMeOnly,
+    selectedEvent,
+    selectedEventIndex,
+    showSavedOnly,
+    sortedEventsForCurrentView.length,
+    thisWeekDay,
+    thisWeekOnly,
+    view,
+  ])
 
   const searchScopeLabel = (() => {
     if (nearMeOnly) return 'Near you'
@@ -1200,11 +1321,47 @@ function AppInner() {
   const requestNearMe = async () => {
     setNearMeError('')
     setNearMeLoading(true)
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'H1,H3',
+      location: 'src/App.jsx:requestNearMe',
+      message: 'Near Me request started',
+      data: {
+        platform: Capacitor.getPlatform?.() || 'unknown',
+        isNative: Capacitor.isNativePlatform(),
+        radiusMiles: nearMeRadiusMiles,
+        eventsCount: events.length,
+      },
+    })
+    // #endregion
     try {
       const coords = await getCurrentCoords()
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: 'H1,H3',
+        location: 'src/App.jsx:requestNearMe',
+        message: 'Near Me request succeeded',
+        data: {
+          hasLat: Number.isFinite(coords?.lat),
+          hasLng: Number.isFinite(coords?.lng),
+          radiusMiles: nearMeRadiusMiles,
+        },
+      })
+      // #endregion
       setNearMeCoords(coords)
       setNearMeOnly(true)
     } catch (err) {
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: 'H1',
+        location: 'src/App.jsx:requestNearMe',
+        message: 'Near Me request failed',
+        data: {
+          name: err?.name || '',
+          message: err?.message || String(err || ''),
+        },
+      })
+      // #endregion
       setNearMeError(err?.message || 'Could not get location')
       setNearMeOnly(false)
     } finally {
@@ -1857,14 +2014,24 @@ function AppInner() {
             gap: 7,
             flexWrap: isPhoneViewport ? 'nowrap' : 'wrap',
             overflowX: isPhoneViewport ? 'auto' : 'visible',
-            paddingBottom: isPhoneViewport ? 4 : 2,
+            paddingBottom: nearMeOnly ? 58 : isPhoneViewport ? 4 : 2,
             alignItems: 'center',
             WebkitOverflowScrolling: isPhoneViewport ? 'touch' : undefined,
           }}
         >
           {/* All Events */}
           <button
-            onClick={() => setFilterType('all')}
+            onClick={() => {
+              // #region agent log
+              agentDebugLog({
+                hypothesisId: 'H2,H3',
+                location: 'src/App.jsx:allEventsFilterClick',
+                message: 'All Events filter chip clicked',
+                data: { filterTypeBefore: filterType, filterMenuOpen },
+              })
+              // #endregion
+              setFilterType('all')
+            }}
             style={{
               background: filterType === 'all' ? '#FF6B35' : filterChipBg,
               color: filterType === 'all' ? '#0A0A0A' : filterChipText,
@@ -1882,101 +2049,231 @@ function AppInner() {
           </button>
 
           {/* Near Me (next to All Events) */}
-          <button
-            onClick={() => {
-              if (nearMeLoading) return
-              if (nearMeOnly) {
-                setNearMeOnly(false)
-              } else {
-                setMapFocusCoords(null)
-                requestNearMe()
-              }
-            }}
-            disabled={nearMeLoading}
-            style={{
-              background: nearMeOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
-              color: nearMeOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
-              border: '1px solid',
-              borderColor: nearMeOnly ? '#FF6B35' : filterChipBorder,
-              borderRadius: 20,
-              padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: nearMeLoading ? 'wait' : 'pointer',
-              opacity: nearMeLoading ? 0.7 : 1,
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}
-          >
-            {nearMeLoading ? 'Locating…' : nearMeOnly ? `✓ Near Me` : `Near Me`}
-          </button>
-
-          {nearMeOnly && (
-            <select
-              value={nearMeRadiusMiles}
-              onChange={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
-              aria-label="Near Me radius"
-              title="Adjust the Near Me search radius"
+          <div style={{ position: 'relative', flex: '0 0 auto', zIndex: nearMeOnly ? 650 : 1 }}>
+            <button
+              onClick={() => {
+                // #region agent log
+                agentDebugLog({
+                  hypothesisId: 'H1,H2',
+                  location: 'src/App.jsx:nearMeFilterClick',
+                  message: 'Near Me filter chip clicked',
+                  data: {
+                    nearMeLoading,
+                    nearMeOnly,
+                    hasNearMeCoords: Boolean(nearMeCoords),
+                    nearMeError,
+                  },
+                })
+                // #endregion
+                if (nearMeLoading) return
+                if (nearMeOnly) {
+                  setNearMeOnly(false)
+                } else {
+                  setMapFocusCoords(null)
+                  requestNearMe()
+                }
+              }}
+              disabled={nearMeLoading}
               style={{
-                background: isLight ? '#FFF3ED' : '#20140F',
-                color: isLight ? '#D1491A' : '#FF8A5C',
-                border: '1px solid #FF6B35',
+                background: nearMeOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
+                color: nearMeOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
+                border: '1px solid',
+                borderColor: nearMeOnly ? '#FF6B35' : filterChipBorder,
                 borderRadius: 20,
-                padding: '5px 28px 5px 11px',
+                padding: '5px 13px',
                 fontFamily: "'DM Sans', sans-serif",
                 fontSize: 12,
-                fontWeight: 700,
+                fontWeight: 600,
+                cursor: nearMeLoading ? 'wait' : 'pointer',
+                opacity: nearMeLoading ? 0.7 : 1,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {nearMeLoading ? 'Locating…' : nearMeOnly ? `✓ Near Me` : `Near Me`}
+            </button>
+
+            {nearMeOnly && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  zIndex: 650,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  width: 198,
+                  padding: '8px 11px',
+                  borderRadius: 16,
+                  border: '1px solid #FF6B35',
+                  background: isLight ? '#FFF3ED' : '#20140F',
+                  color: isLight ? '#D1491A' : '#FF8A5C',
+                  boxShadow: `0 12px 32px ${isLight ? '#00000018' : '#00000066'}`,
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                }}
+              >
+                <span style={{ minWidth: 42, whiteSpace: 'nowrap' }}>{nearMeRadiusMiles} mi</span>
+                <input
+                  type="range"
+                  min={MIN_NEAR_ME_RADIUS_MILES}
+                  max={MAX_NEAR_ME_RADIUS_MILES}
+                  step={NEAR_ME_RADIUS_STEP_MILES}
+                  value={nearMeRadiusMiles}
+                  onInput={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
+                  onChange={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
+                  aria-label="Near Me radius"
+                  title="Adjust the Near Me search radius"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    accentColor: '#FF6B35',
+                    cursor: 'pointer',
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* This Week */}
+          <div style={{ position: 'relative', flex: '0 0 auto' }}>
+            <button
+              onClick={() => {
+                // #region agent log
+                agentDebugLog({
+                  hypothesisId: 'H2,H3',
+                  location: 'src/App.jsx:thisWeekFilterClick',
+                  message: 'This Week filter chip clicked',
+                  data: { filterMenuOpenBefore: filterMenuOpen, thisWeekOnly, thisWeekDay },
+                })
+                // #endregion
+                setFilterMenuOpen((v) => (v === 'week' ? null : 'week'))
+              }}
+              style={{
+                background: thisWeekOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
+                color: thisWeekOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
+                border: '1px solid',
+                borderColor: thisWeekOnly ? '#FF6B35' : filterChipBorder,
+                borderRadius: 20,
+                padding: '5px 13px',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                fontWeight: 600,
                 cursor: 'pointer',
                 textTransform: 'uppercase',
                 letterSpacing: 0.5,
+                whiteSpace: 'nowrap',
               }}
+              title={
+                thisWeekOnly && thisWeekStartKey && thisWeekEndKey
+                  ? `Showing events ${thisWeekStartKey} to ${thisWeekEndKey}`
+                  : 'Choose a day this week'
+              }
             >
-              {NEAR_ME_RADIUS_OPTIONS.map((radius) => (
-                <option key={radius} value={radius}>
-                  {radius} mi
-                </option>
-              ))}
-            </select>
-          )}
+              {thisWeekOnly
+                ? `✓ ${WEEKDAY_OPTIONS.find((d) => d.value === thisWeekDay)?.label || 'This Week'}`
+                : `This Week ▾`}
+            </button>
+            {filterMenuOpen === 'week' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  zIndex: 600,
+                  minWidth: 150,
+                  background: isLight ? '#FFFFFF' : '#111',
+                  border: `1px solid ${filterChipBorder}`,
+                  borderRadius: 12,
+                  padding: 6,
+                  boxShadow: `0 12px 32px ${isLight ? '#00000018' : '#00000066'}`,
+                }}
+              >
+                {WEEKDAY_OPTIONS.map((day) => (
+                  <button
+                    key={day.value}
+                    type="button"
+                    onClick={() => {
+                      setThisWeekOnly(true)
+                      setThisWeekDay(day.value)
+                      setFilterMenuOpen(null)
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      background:
+                        thisWeekOnly && thisWeekDay === day.value
+                          ? isLight
+                            ? '#FFF3ED'
+                            : '#24140E'
+                          : 'transparent',
+                      color: isLight ? '#222' : '#EDEDED',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: 12,
+                      fontWeight: thisWeekOnly && thisWeekDay === day.value ? 700 : 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+                {thisWeekOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setThisWeekOnly(false)
+                      setThisWeekDay('all')
+                      setFilterMenuOpen(null)
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      border: 'none',
+                      borderTop: `1px solid ${filterChipBorder}`,
+                      marginTop: 4,
+                      padding: '8px 10px',
+                      background: 'transparent',
+                      color: isLight ? '#777' : '#888',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Clear week filter
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
-          {/* This Week */}
-          <button
-            onClick={() => setThisWeekOnly((v) => !v)}
-            style={{
-              background: thisWeekOnly ? (isLight ? '#FFF3ED' : '#222') : filterChipBg,
-              color: thisWeekOnly ? (isLight ? '#D1491A' : '#aaa') : filterChipText,
-              border: '1px solid',
-              borderColor: thisWeekOnly ? '#FF6B35' : filterChipBorder,
-              borderRadius: 20,
-              padding: '5px 13px',
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-              whiteSpace: 'nowrap',
-            }}
-            title={
-              thisWeekOnly && thisWeekStartKey && thisWeekEndKey
-                ? `Showing events ${thisWeekStartKey} to ${thisWeekEndKey}`
-                : 'Show only events happening this week'
-            }
-          >
-            {thisWeekOnly ? `✓ This Week` : `This Week`}
-          </button>
-
-          {/* Other type filters */}
-          {['meet', 'car show', 'track day', 'cruise'].map((type) => (
+          <div style={{ position: 'relative', flex: '0 0 auto' }}>
             <button
-              key={type}
-              onClick={() => setFilterType(type)}
+              type="button"
+              onClick={() => {
+                // #region agent log
+                agentDebugLog({
+                  hypothesisId: 'H2,H3',
+                  location: 'src/App.jsx:eventTypeFilterClick',
+                  message: 'Event type filter chip clicked',
+                  data: { filterMenuOpenBefore: filterMenuOpen, filterType },
+                })
+                // #endregion
+                setFilterMenuOpen((v) => (v === 'type' ? null : 'type'))
+              }}
               style={{
-                background: filterType === type ? '#FF6B35' : filterChipBg,
-                color: filterType === type ? '#0A0A0A' : filterChipText,
+                background: filterType !== 'all' ? '#FF6B35' : filterChipBg,
+                color: filterType !== 'all' ? '#0A0A0A' : filterChipText,
                 border: '1px solid',
-                borderColor: filterType === type ? '#FF6B35' : filterChipBorder,
+                borderColor: filterType !== 'all' ? '#FF6B35' : filterChipBorder,
                 borderRadius: 20,
                 padding: '5px 13px',
                 fontFamily: "'DM Sans', sans-serif",
@@ -1984,11 +2281,87 @@ function AppInner() {
                 fontWeight: 600,
                 cursor: 'pointer',
                 textTransform: 'capitalize',
+                whiteSpace: 'nowrap',
               }}
             >
-              {type}
+              {EVENT_TYPE_OPTIONS.find((type) => type.value === filterType)?.label || 'Event Type'}{' '}
+              ▾
             </button>
-          ))}
+            {filterMenuOpen === 'type' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  zIndex: 600,
+                  minWidth: 150,
+                  background: isLight ? '#FFFFFF' : '#111',
+                  border: `1px solid ${filterChipBorder}`,
+                  borderRadius: 12,
+                  padding: 6,
+                  boxShadow: `0 12px 32px ${isLight ? '#00000018' : '#00000066'}`,
+                }}
+              >
+                {EVENT_TYPE_OPTIONS.map((type) => (
+                  <button
+                    key={type.value}
+                    type="button"
+                    onClick={() => {
+                      setFilterType(type.value)
+                      setFilterMenuOpen(null)
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      background:
+                        filterType === type.value
+                          ? isLight
+                            ? '#FFF3ED'
+                            : '#24140E'
+                          : 'transparent',
+                      color: isLight ? '#222' : '#EDEDED',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: 12,
+                      fontWeight: filterType === type.value ? 700 : 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <select
+            value={dateSort}
+            onChange={(e) => setDateSort(e.target.value)}
+            aria-label="Sort events by date"
+            title="Sort events by date"
+            style={{
+              background: filterChipBg,
+              color: filterChipText,
+              border: `1px solid ${filterChipBorder}`,
+              borderRadius: 20,
+              padding: '5px 28px 5px 11px',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
+            {DATE_SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
 
           {/* Past events toggle */}
           <button
@@ -2045,7 +2418,7 @@ function AppInner() {
       {view === 'map' && (
         <div className="fade-up">
           <MapView
-            events={eventsForCurrentView}
+            events={sortedEventsForCurrentView}
             loading={loading}
             onSelectEvent={(e) => {
               setMapSelected(e)
@@ -2140,7 +2513,7 @@ function AppInner() {
                 RETRY
               </button>
             </div>
-          ) : eventsForCurrentView.length === 0 ? (
+          ) : sortedEventsForCurrentView.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', color: '#333' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🚗</div>
               <div style={{ fontSize: 22, letterSpacing: 1, marginBottom: 6 }}>
@@ -2175,7 +2548,7 @@ function AppInner() {
               {!debouncedSearchQuery &&
                 filterType === 'all' &&
                 view !== 'mine' &&
-                eventsForCurrentView.some((e) => e.featured) && (
+                sortedEventsForCurrentView.some((e) => e.featured) && (
                   <div style={{ marginBottom: 4 }}>
                     <div
                       style={{
@@ -2188,7 +2561,7 @@ function AppInner() {
                     >
                       ⭐ FEATURED
                     </div>
-                    {eventsForCurrentView
+                    {sortedEventsForCurrentView
                       .filter((e) => e.featured)
                       .map((e) => (
                         <EventCard
@@ -2213,7 +2586,7 @@ function AppInner() {
                     </div>
                   </div>
                 )}
-              {eventsForCurrentView
+              {sortedEventsForCurrentView
                 .filter((e) =>
                   debouncedSearchQuery || filterType !== 'all' || view === 'mine'
                     ? true
@@ -2346,6 +2719,13 @@ function AppInner() {
           onClose={() => closeSelectedEvent()}
           onAuthNeeded={handleAuthNeeded}
           onUpdated={handleUpdated}
+          onPrevious={canShowPreviousEvent ? () => openEventAtOffset(-1) : null}
+          onNext={canShowNextEvent ? () => openEventAtOffset(1) : null}
+          eventPosition={
+            selectedEventIndex >= 0
+              ? { current: selectedEventIndex + 1, total: sortedEventsForCurrentView.length }
+              : null
+          }
           onDeleted={(id) => {
             setEvents((prev) => prev.filter((e) => e.id !== id))
             closeSelectedEvent()
