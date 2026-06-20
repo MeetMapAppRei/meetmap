@@ -2619,6 +2619,7 @@ function AppInner() {
       )}
       {selectedEvent && (
         <EventDetail
+          key={selectedEvent.id}
           event={selectedEvent}
           saved={savedEventIds.includes(selectedEvent.id)}
           onToggleSaved={() => handleToggleSaved(selectedEvent.id)}
