@@ -134,19 +134,6 @@ const DEFAULT_NEAR_ME_RADIUS_MILES = 25
 const MIN_NEAR_ME_RADIUS_MILES = 5
 const MAX_NEAR_ME_RADIUS_MILES = 100
 const NEAR_ME_RADIUS_STEP_MILES = 5
-const AGENT_DEBUG_RUN_ID = 'initial'
-const agentDebugLog = (payload) => {
-  fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'de8af0' },
-    body: JSON.stringify({
-      sessionId: 'de8af0',
-      runId: AGENT_DEBUG_RUN_ID,
-      ...payload,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-}
 
 const clampNearMeRadiusMiles = (value) => {
   const radius = Number(value)
@@ -407,6 +394,7 @@ function AppInner() {
   const [nearMeError, setNearMeError] = useState('')
   const [nearMeLoading, setNearMeLoading] = useState(false)
   const [nearMeRadiusMiles, setNearMeRadiusMiles] = useState(getStoredNearMeRadiusMiles)
+  const [nearMeRadiusOpen, setNearMeRadiusOpen] = useState(false)
   const [mapFocusCoords, setMapFocusCoords] = useState(null)
   const [thisWeekOnly, setThisWeekOnly] = useState(false)
   const [thisWeekDay, setThisWeekDay] = useState('all')
@@ -1041,67 +1029,11 @@ function AppInner() {
       if (selectedEventIndex < 0) return
       const next = sortedEventsForCurrentView[selectedEventIndex + offset]
       if (next) {
-        // #region agent log
-        agentDebugLog({
-          hypothesisId: 'H4',
-          location: 'src/App.jsx:openEventAtOffset',
-          message: 'Event detail navigation selected next event',
-          data: {
-            offset,
-            selectedEventIndex,
-            currentId: selectedEvent?.id || null,
-            currentTitle: selectedEvent?.title || null,
-            nextId: next.id,
-            nextTitle: next.title,
-            total: sortedEventsForCurrentView.length,
-          },
-        })
-        // #endregion
         setSelectedEvent(next)
       }
     },
-    [selectedEvent, selectedEventIndex, sortedEventsForCurrentView],
+    [selectedEventIndex, sortedEventsForCurrentView],
   )
-
-  useEffect(() => {
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: 'H2,H3,H4',
-      location: 'src/App.jsx:derivedViewState',
-      message: 'Derived filter and selected event state changed',
-      data: {
-        view,
-        filterType,
-        filterMenuOpen,
-        nearMeOnly,
-        hasNearMeCoords: Boolean(nearMeCoords),
-        nearMeError,
-        thisWeekOnly,
-        thisWeekDay,
-        showSavedOnly,
-        eventsCount: events.length,
-        displayedCount: sortedEventsForCurrentView.length,
-        selectedEventId: selectedEvent?.id || null,
-        selectedEventTitle: selectedEvent?.title || null,
-        selectedEventIndex,
-      },
-    })
-    // #endregion
-  }, [
-    events.length,
-    filterMenuOpen,
-    filterType,
-    nearMeCoords,
-    nearMeError,
-    nearMeOnly,
-    selectedEvent,
-    selectedEventIndex,
-    showSavedOnly,
-    sortedEventsForCurrentView.length,
-    thisWeekDay,
-    thisWeekOnly,
-    view,
-  ])
 
   const searchScopeLabel = (() => {
     if (nearMeOnly) return 'Near you'
@@ -1321,49 +1253,15 @@ function AppInner() {
   const requestNearMe = async () => {
     setNearMeError('')
     setNearMeLoading(true)
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: 'H1,H3',
-      location: 'src/App.jsx:requestNearMe',
-      message: 'Near Me request started',
-      data: {
-        platform: Capacitor.getPlatform?.() || 'unknown',
-        isNative: Capacitor.isNativePlatform(),
-        radiusMiles: nearMeRadiusMiles,
-        eventsCount: events.length,
-      },
-    })
-    // #endregion
     try {
       const coords = await getCurrentCoords()
-      // #region agent log
-      agentDebugLog({
-        hypothesisId: 'H1,H3',
-        location: 'src/App.jsx:requestNearMe',
-        message: 'Near Me request succeeded',
-        data: {
-          hasLat: Number.isFinite(coords?.lat),
-          hasLng: Number.isFinite(coords?.lng),
-          radiusMiles: nearMeRadiusMiles,
-        },
-      })
-      // #endregion
       setNearMeCoords(coords)
       setNearMeOnly(true)
+      setNearMeRadiusOpen(true)
     } catch (err) {
-      // #region agent log
-      agentDebugLog({
-        hypothesisId: 'H1',
-        location: 'src/App.jsx:requestNearMe',
-        message: 'Near Me request failed',
-        data: {
-          name: err?.name || '',
-          message: err?.message || String(err || ''),
-        },
-      })
-      // #endregion
       setNearMeError(err?.message || 'Could not get location')
       setNearMeOnly(false)
+      setNearMeRadiusOpen(false)
     } finally {
       setNearMeLoading(false)
     }
@@ -1725,6 +1623,26 @@ function AppInner() {
         .meetmap-header-actions > *, .meetmap-filter-row > * { flex: 0 0 auto; }
         .meetmap-header-actions, .meetmap-filter-row { scrollbar-width: none; }
         .meetmap-header-actions::-webkit-scrollbar, .meetmap-filter-row::-webkit-scrollbar { display: none; }
+        @media (max-width: 480px) {
+          .meetmap-header-actions,
+          .meetmap-filter-row {
+            flex-wrap: wrap !important;
+            overflow: visible !important;
+          }
+          .meetmap-header-actions > *,
+          .meetmap-filter-row > * {
+            flex: 0 1 auto !important;
+          }
+          .meetmap-filter-row > button,
+          .meetmap-filter-row > div > button,
+          .meetmap-filter-row > select {
+            font-size: 11px !important;
+            padding: 5px 9px !important;
+          }
+          .meetmap-filter-row > select {
+            max-width: 150px;
+          }
+        }
       `}</style>
 
       {/* ── HEADER ── */}
@@ -1810,10 +1728,10 @@ function AppInner() {
               display: 'flex',
               gap: 6,
               alignItems: 'center',
-              flexWrap: isPhoneViewport ? 'nowrap' : 'wrap',
+              flexWrap: 'wrap',
               justifyContent: isPhoneViewport ? 'flex-start' : 'flex-end',
               marginLeft: isPhoneViewport ? 0 : 'auto',
-              overflowX: isPhoneViewport ? 'auto' : 'visible',
+              overflowX: 'visible',
               paddingBottom: isPhoneViewport ? 2 : 0,
               WebkitOverflowScrolling: isPhoneViewport ? 'touch' : undefined,
             }}
@@ -2012,9 +1930,9 @@ function AppInner() {
           style={{
             display: 'flex',
             gap: 7,
-            flexWrap: isPhoneViewport ? 'nowrap' : 'wrap',
-            overflowX: isPhoneViewport ? 'auto' : 'visible',
-            paddingBottom: nearMeOnly ? 58 : isPhoneViewport ? 4 : 2,
+            flexWrap: 'wrap',
+            overflowX: 'visible',
+            paddingBottom: isPhoneViewport ? 4 : 2,
             alignItems: 'center',
             WebkitOverflowScrolling: isPhoneViewport ? 'touch' : undefined,
           }}
@@ -2022,15 +1940,12 @@ function AppInner() {
           {/* All Events */}
           <button
             onClick={() => {
-              // #region agent log
-              agentDebugLog({
-                hypothesisId: 'H2,H3',
-                location: 'src/App.jsx:allEventsFilterClick',
-                message: 'All Events filter chip clicked',
-                data: { filterTypeBefore: filterType, filterMenuOpen },
-              })
-              // #endregion
               setFilterType('all')
+              setNearMeOnly(false)
+              setNearMeRadiusOpen(false)
+              setThisWeekOnly(false)
+              setThisWeekDay('all')
+              setFilterMenuOpen(null)
             }}
             style={{
               background: filterType === 'all' ? '#FF6B35' : filterChipBg,
@@ -2052,22 +1967,9 @@ function AppInner() {
           <div style={{ position: 'relative', flex: '0 0 auto', zIndex: nearMeOnly ? 650 : 1 }}>
             <button
               onClick={() => {
-                // #region agent log
-                agentDebugLog({
-                  hypothesisId: 'H1,H2',
-                  location: 'src/App.jsx:nearMeFilterClick',
-                  message: 'Near Me filter chip clicked',
-                  data: {
-                    nearMeLoading,
-                    nearMeOnly,
-                    hasNearMeCoords: Boolean(nearMeCoords),
-                    nearMeError,
-                  },
-                })
-                // #endregion
                 if (nearMeLoading) return
                 if (nearMeOnly) {
-                  setNearMeOnly(false)
+                  setNearMeRadiusOpen((open) => !open)
                 } else {
                   setMapFocusCoords(null)
                   requestNearMe()
@@ -2093,64 +1995,12 @@ function AppInner() {
             >
               {nearMeLoading ? 'Locating…' : nearMeOnly ? `✓ Near Me` : `Near Me`}
             </button>
-
-            {nearMeOnly && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 8px)',
-                  left: 0,
-                  zIndex: 650,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  width: 198,
-                  padding: '8px 11px',
-                  borderRadius: 16,
-                  border: '1px solid #FF6B35',
-                  background: isLight ? '#FFF3ED' : '#20140F',
-                  color: isLight ? '#D1491A' : '#FF8A5C',
-                  boxShadow: `0 12px 32px ${isLight ? '#00000018' : '#00000066'}`,
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: 0.5,
-                }}
-              >
-                <span style={{ minWidth: 42, whiteSpace: 'nowrap' }}>{nearMeRadiusMiles} mi</span>
-                <input
-                  type="range"
-                  min={MIN_NEAR_ME_RADIUS_MILES}
-                  max={MAX_NEAR_ME_RADIUS_MILES}
-                  step={NEAR_ME_RADIUS_STEP_MILES}
-                  value={nearMeRadiusMiles}
-                  onInput={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
-                  onChange={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
-                  aria-label="Near Me radius"
-                  title="Adjust the Near Me search radius"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    accentColor: '#FF6B35',
-                    cursor: 'pointer',
-                  }}
-                />
-              </div>
-            )}
           </div>
 
           {/* This Week */}
           <div style={{ position: 'relative', flex: '0 0 auto' }}>
             <button
               onClick={() => {
-                // #region agent log
-                agentDebugLog({
-                  hypothesisId: 'H2,H3',
-                  location: 'src/App.jsx:thisWeekFilterClick',
-                  message: 'This Week filter chip clicked',
-                  data: { filterMenuOpenBefore: filterMenuOpen, thisWeekOnly, thisWeekDay },
-                })
-                // #endregion
                 setFilterMenuOpen((v) => (v === 'week' ? null : 'week'))
               }}
               style={{
@@ -2259,14 +2109,6 @@ function AppInner() {
             <button
               type="button"
               onClick={() => {
-                // #region agent log
-                agentDebugLog({
-                  hypothesisId: 'H2,H3',
-                  location: 'src/App.jsx:eventTypeFilterClick',
-                  message: 'Event type filter chip clicked',
-                  data: { filterMenuOpenBefore: filterMenuOpen, filterType },
-                })
-                // #endregion
                 setFilterMenuOpen((v) => (v === 'type' ? null : 'type'))
               }}
               style={{
@@ -2399,6 +2241,70 @@ function AppInner() {
             {showSavedOnly ? `★ Saved (${savedEventIds.length})` : 'Saved'}
           </button>
         </div>
+
+        {nearMeOnly && nearMeRadiusOpen && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 9,
+              width: 'min(232px, calc(100% - 92px))',
+              marginTop: 8,
+              marginLeft: 92,
+              padding: '8px 11px',
+              borderRadius: 16,
+              border: '1px solid #FF6B35',
+              background: isLight ? '#FFF3ED' : '#20140F',
+              color: isLight ? '#D1491A' : '#FF8A5C',
+              boxShadow: `0 8px 22px ${isLight ? '#00000012' : '#00000055'}`,
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: 0.5,
+            }}
+          >
+            <span style={{ minWidth: 42, whiteSpace: 'nowrap' }}>{nearMeRadiusMiles} mi</span>
+            <input
+              type="range"
+              min={MIN_NEAR_ME_RADIUS_MILES}
+              max={MAX_NEAR_ME_RADIUS_MILES}
+              step={NEAR_ME_RADIUS_STEP_MILES}
+              value={nearMeRadiusMiles}
+              onInput={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
+              onChange={(e) => setNearMeRadiusMiles(clampNearMeRadiusMiles(e.target.value))}
+              aria-label="Near Me radius"
+              title="Adjust the Near Me search radius"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                accentColor: '#FF6B35',
+                cursor: 'pointer',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setNearMeRadiusOpen(false)}
+              aria-label="Close Near Me radius slider"
+              title="Close radius slider"
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
+                border: `1px solid ${isLight ? '#F0C3B3' : '#3A241C'}`,
+                background: isLight ? '#FFFFFF' : '#24140E',
+                color: isLight ? '#D1491A' : '#FF8A5C',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 14,
+                fontWeight: 900,
+                lineHeight: 1,
+                cursor: 'pointer',
+                flex: '0 0 auto',
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {nearMeError && (
           <div
