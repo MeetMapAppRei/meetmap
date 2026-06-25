@@ -83,6 +83,11 @@ export default function MapView({
     map.current.flyTo({ center: [centerOn.lng, centerOn.lat], zoom: 11, speed: 1.2 })
   }, [mapLoaded, centerOn])
 
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return
+    map.current.resize()
+  }, [bottomNavHeight, headerHeight, mapLoaded])
+
   // Add markers when events or map change
   useEffect(() => {
     if (!mapLoaded || !window.mapboxgl) return
@@ -140,15 +145,22 @@ export default function MapView({
     )
   }
 
-  const mapHeight = `max(320px, calc(100dvh - ${headerHeight}px - ${bottomNavHeight}px - env(safe-area-inset-bottom)))`
+  const mapHeight = `max(320px, calc(100dvh - ${headerHeight}px - env(safe-area-inset-bottom)))`
 
   return (
     <div
+      className="meetmap-map-shell"
       style={{
         position: 'relative',
         height: mapHeight,
+        overflow: 'hidden',
       }}
     >
+      <style>{`
+        .meetmap-map-shell .mapboxgl-ctrl-bottom-right {
+          bottom: ${bottomNavHeight + 12}px;
+        }
+      `}</style>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
       {!mapLoaded && (
         <div
@@ -181,7 +193,7 @@ function getIcon(type) {
 // Shown if Mapbox token not yet configured
 function FallbackMap({ events, onSelectEvent, bottomNavHeight = 110, headerHeight = 175 }) {
   const eventsWithCoords = events.filter((e) => e.lat && e.lng)
-  const mapHeight = `max(320px, calc(100dvh - ${headerHeight}px - ${bottomNavHeight}px - env(safe-area-inset-bottom)))`
+  const mapHeight = `max(320px, calc(100dvh - ${headerHeight}px - env(safe-area-inset-bottom)))`
 
   return (
     <div
@@ -286,6 +298,7 @@ function FallbackMap({ events, onSelectEvent, bottomNavHeight = 110, headerHeigh
             bottom: 60,
             left: '50%',
             transform: 'translateX(-50%)',
+            marginBottom: bottomNavHeight,
             fontFamily: "'DM Sans', sans-serif",
             fontSize: 13,
             color: '#333',

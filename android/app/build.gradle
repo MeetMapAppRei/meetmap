@@ -15,7 +15,7 @@ android {
         applicationId "com.meetmap.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 40
+        versionCode 41
         versionName "1.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -65,6 +65,20 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+gradle.projectsEvaluated {
+    def dexTask = tasks.findByName('dexBuilderRelease')
+    if (dexTask != null) {
+        dexTask.doFirst {
+            def currentProjectPath = file("${buildDir}/intermediates/desugar_graph/release/out/currentProject")
+            // Work around AGP 8.2.x on Windows sometimes failing to delete stale
+            // desugar graph buckets during incremental release builds.
+            if (currentProjectPath.exists()) {
+                delete(currentProjectPath)
+            }
+        }
+    }
+}
 
 try {
     def servicesJSON = file('google-services.json')

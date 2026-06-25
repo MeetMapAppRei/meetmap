@@ -1,5 +1,27 @@
 # Mobile release notes
 
+## 1.1.0 (Android versionCode 41)
+
+**Google Play "What's new" (paste):**
+
+```
+• Fixed Near Me on Android and improved location filtering
+• Filter buttons now stay visible without horizontal scrolling
+• Near Me radius slider can be closed while keeping Near Me active
+• Event card Previous/Next navigation now updates the full event card
+• Improved map layout so pins no longer overlap a blank bottom area
+```
+
+### What to test (Android versionCode 41)
+
+1. **Near Me** — Tap Near Me, allow location, confirm nearby events load and the radius slider appears.
+2. **Radius slider** — Close the slider with × and confirm Near Me stays active; tap Near Me again to reopen the slider.
+3. **Filters** — Confirm All Events, This Week, event type, sort, Past Events, and Saved are visible without horizontal scrolling.
+4. **Event detail navigation** — Open an event and tap Next/Previous; image, title, details, and position should all change.
+5. **Map layout** — Open Map and confirm pins stay over the map, with no blank white strip under them.
+
+---
+
 ## 1.1.0 (Android versionCode 38)
 
 **Google Play "What's new" (paste):**
