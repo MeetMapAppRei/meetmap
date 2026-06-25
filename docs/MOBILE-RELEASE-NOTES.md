@@ -1,6 +1,6 @@
 # Mobile release notes
 
-## 1.1.0 (Android versionCode 41)
+## 1.1.0 (Android versionCode 42)
 
 **Google Play "What's new" (paste):**
 
@@ -12,7 +12,7 @@
 • Improved map layout so pins no longer overlap a blank bottom area
 ```
 
-### What to test (Android versionCode 41)
+### What to test (Android versionCode 42)
 
 1. **Near Me** — Tap Near Me, allow location, confirm nearby events load and the radius slider appears.
 2. **Radius slider** — Close the slider with × and confirm Near Me stays active; tap Near Me again to reopen the slider.
