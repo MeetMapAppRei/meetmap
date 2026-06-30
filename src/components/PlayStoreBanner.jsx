@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom'
 import { Capacitor } from '@capacitor/core'
 import { useTheme } from '../lib/useTheme'
 
-const STORAGE_KEY = 'meetmap:android-app-promo-snooze-until'
+const STORAGE_KEY = 'meetmap:mobile-app-promo-snooze-until'
 const SNOOZE_MS = 10 * 24 * 60 * 60 * 1000
 const DESKTOP_MQ = '(min-width: 1024px) and (pointer: fine)'
 
+const defaultAppStoreUrl = 'https://apps.apple.com/us/app/meet-map-car-meets/id6775626296'
 const defaultPlayUrl = 'https://play.google.com/store/apps/details?id=com.meetmap.app'
 
 /** Hide promo inside the installed Capacitor shell (Play Store / native app). */
@@ -59,6 +60,8 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
   const isDesktopLayout = useDesktopLayout()
   const barRef = useRef(null)
 
+  const appStoreUrl =
+    String(import.meta.env.VITE_APP_STORE_URL || defaultAppStoreUrl).trim() || defaultAppStoreUrl
   const playUrl =
     String(import.meta.env.VITE_PLAY_STORE_URL || defaultPlayUrl).trim() || defaultPlayUrl
 
@@ -216,7 +219,7 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
     <div
       ref={placement === 'top' ? barRef : undefined}
       role="dialog"
-      aria-label="Get the Meet Map Android app"
+      aria-label="Get the Meet Map mobile apps"
       style={outer}
     >
       {placement === 'top' ? (
@@ -248,7 +251,7 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
                 color: '#FF6B35',
               }}
             >
-              ANDROID APP ON GOOGLE PLAY
+              MEET MAP IS ON IOS AND ANDROID
             </span>
             <span
               style={{
@@ -258,12 +261,15 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
                 fontWeight: 500,
               }}
             >
-              Alerts for saved meets and a faster map.
+              Download the iOS or Android app for saved-meet alerts and a faster map.
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <a href={appStoreUrl} target="_blank" rel="noopener noreferrer" style={btnPrimary}>
+              APP STORE
+            </a>
             <a href={playUrl} target="_blank" rel="noopener noreferrer" style={btnPrimary}>
-              OPEN PLAY STORE
+              GOOGLE PLAY
             </a>
             <button type="button" onClick={snooze} style={btnGhost}>
               Maybe later
@@ -302,7 +308,7 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
                   marginBottom: 4,
                 }}
               >
-                GET THE ANDROID APP
+                GET THE MOBILE APP
               </div>
               <p
                 style={{
@@ -313,7 +319,8 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
                   fontWeight: 500,
                 }}
               >
-                Faster map, alerts for saved meets, and the same community — now on Google Play.
+                Meet Map is now available for iOS and Android with the same live map and event
+                alerts.
               </p>
             </div>
             <button type="button" onClick={snooze} aria-label="Dismiss" style={dismissBtn}>
@@ -328,20 +335,26 @@ export default function PlayStoreBanner({ bottomOffsetPx = 0, onVisibilityChange
               alignItems: 'center',
             }}
           >
-            <a
-              href={playUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                ...btnPrimary,
-                flex: '1 1 140px',
-                textAlign: 'center',
-                fontSize: 15,
-                padding: '10px 14px',
-              }}
-            >
-              OPEN PLAY STORE
-            </a>
+            {[
+              { href: appStoreUrl, label: 'APP STORE' },
+              { href: playUrl, label: 'GOOGLE PLAY' },
+            ].map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  ...btnPrimary,
+                  flex: '1 1 140px',
+                  textAlign: 'center',
+                  fontSize: 15,
+                  padding: '10px 14px',
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
             <button type="button" onClick={snooze} style={{ ...btnGhost, flex: '1 1 120px' }}>
               Maybe later
             </button>

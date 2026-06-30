@@ -21,7 +21,7 @@ const PROMPT = `Extract car meet event info from this flyer. Return ONLY a JSON 
   "description": "any details about the event",
   "tags": "comma separated tags like JDM, All Makes, etc"
 }
-If a field is not found, use empty string for strings or [] for dates. For dates: list EVERY distinct event date shown on the flyer (multi-day meets, recurring dates, date ranges, or multiple listed days) in "dates" as ISO strings sorted earliest-first. If there is only one date, use a single-element array. Set "date" to the same value as the first/primary date (usually the earliest). For date, convert to YYYY-MM-DD using the current year ${new Date().getFullYear()} if no year is specified on the flyer. For time use 24hr format.`
+If a field is not found, use empty string for strings or [] for dates. Today is ${new Date().toISOString().slice(0, 10)}. For dates: list EVERY distinct event date shown on the flyer (multi-day meets, recurring dates, date ranges, or multiple listed days) in "dates" as ISO strings sorted earliest-first. If there is only one date, use a single-element array. Set "date" to the same value as the first/primary date (usually the earliest). For date, convert to YYYY-MM-DD. If no year is shown on the flyer, choose the next future occurrence of that month/day relative to today; never choose a past year unless that past year is explicitly visible on the flyer. If a weekday is visible, prefer the future year where the weekday matches. For time use 24hr format.`
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6'
 
@@ -236,6 +236,13 @@ export default async function handler(req, res) {
   try {
     const reqBody = req.body && typeof req.body === 'object' ? req.body : {}
     const { imageUrl, sourceUrl, imageBase64, mediaType: mediaTypeInput } = reqBody
+    const contextText = norm(reqBody.contextText).slice(0, 2000)
+    const promptWithContext = contextText
+      ? `${PROMPT}
+
+Additional source text from the Instagram caption/OCR/alt text. Use it only when it supports the flyer image and still return the same JSON shape:
+${contextText}`
+      : PROMPT
     correlationId = String(reqBody.correlationId || '').slice(0, 80)
     const withCid = (obj) => (correlationId ? { ...obj, correlationId } : obj)
 
@@ -276,7 +283,7 @@ export default async function handler(req, res) {
                     data: String(imageBase64),
                   },
                 },
-                { type: 'text', text: PROMPT },
+                { type: 'text', text: promptWithContext },
               ],
             },
           ],
@@ -492,7 +499,7 @@ export default async function handler(req, res) {
         messages: [
           {
             role: 'user',
-            content: [imageBlock, { type: 'text', text: PROMPT }],
+            content: [imageBlock, { type: 'text', text: promptWithContext }],
           },
         ],
       }),

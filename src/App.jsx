@@ -10,6 +10,7 @@ import {
   createFlyerImport,
   updateFlyerImportStatus,
   updateFlyerImport,
+  fetchDailyFlyerImportReview,
   signOut,
   uploadFlyerImportImage,
   fetchSavedEventIds,
@@ -50,6 +51,7 @@ import EventDetail from './components/EventDetail'
 import EventCard from './components/EventCard'
 import MapView from './components/MapView'
 import ImportQueueModal from './components/ImportQueueModal'
+import AutoImportReviewModal from './components/AutoImportReviewModal'
 import ModerationQueueModal from './components/ModerationQueueModal'
 import PlayStoreBanner from './components/PlayStoreBanner'
 import FirstEventNudge from './components/FirstEventNudge'
@@ -383,6 +385,11 @@ function AppInner() {
   const [moderationReports, setModerationReports] = useState([])
   const [moderationLoading, setModerationLoading] = useState(false)
   const [moderationResolvingReportId, setModerationResolvingReportId] = useState(null)
+  const [showAutoImportReview, setShowAutoImportReview] = useState(false)
+  const [autoImportRuns, setAutoImportRuns] = useState([])
+  const [autoImportCandidates, setAutoImportCandidates] = useState([])
+  const [autoImportLoading, setAutoImportLoading] = useState(false)
+  const [autoImportError, setAutoImportError] = useState('')
   const [approvingImportId, setApprovingImportId] = useState(null)
   const [importProcessing, setImportProcessing] = useState(false)
   const [importParams, setImportParams] = useState(null) // { sourceUrl, imageUrl }
@@ -445,7 +452,7 @@ function AppInner() {
     }
     window.addEventListener('meetmap:open-post', onOpen)
     return () => window.removeEventListener('meetmap:open-post', onOpen)
-  }, [user])
+  }, [user, openAuth])
 
   // Prevent triggering Supabase queries on every keystroke.
   useEffect(() => {
@@ -1293,6 +1300,22 @@ function AppInner() {
     }
   }, [user, canAccessImports])
 
+  const loadAutoImportReview = useCallback(async () => {
+    if (!user || !canAccessImports) return
+    setAutoImportLoading(true)
+    setAutoImportError('')
+    try {
+      const data = await fetchDailyFlyerImportReview(new Date())
+      setAutoImportRuns(data.runs || [])
+      setAutoImportCandidates(data.candidates || [])
+    } catch (e) {
+      console.error('Failed to load auto-import review:', e)
+      setAutoImportError(e?.message || 'Failed to load auto-import review')
+    } finally {
+      setAutoImportLoading(false)
+    }
+  }, [user, canAccessImports])
+
   const handleModerateReport = async (reportId, nextStatus) => {
     if (!user) return
     setModerationResolvingReportId(reportId)
@@ -1317,6 +1340,12 @@ function AppInner() {
     if (!user) return
     loadPendingModerationReports()
   }, [showModerationQueue, user, loadPendingModerationReports])
+
+  useEffect(() => {
+    if (!showAutoImportReview) return
+    if (!user) return
+    loadAutoImportReview()
+  }, [showAutoImportReview, user, loadAutoImportReview])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -1344,7 +1373,7 @@ function AppInner() {
       setShowImportQueue(false)
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [importParams, authLoading, user, canAccessImports])
+  }, [importParams, authLoading, user, canAccessImports, openAuth])
 
   useEffect(() => {
     if (!importParams) return
@@ -1852,6 +1881,26 @@ function AppInner() {
                 }}
               >
                 Imports
+              </button>
+            )}
+            {canAccessImports && (
+              <button
+                onClick={() => setShowAutoImportReview(true)}
+                style={{
+                  background: 'none',
+                  border: `1px solid ${isLight ? '#E5E5E5' : '#222'}`,
+                  borderRadius: 8,
+                  padding: '7px 9px',
+                  color: isLight ? '#444' : '#555',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Auto Imports
               </button>
             )}
             {canAccessImports && (
@@ -2605,6 +2654,15 @@ function AppInner() {
           uploading={importUploading}
           onPickUpload={handleUploadFlyer}
           onClose={() => setShowImportQueue(false)}
+        />
+      )}
+      {showAutoImportReview && canAccessImports && (
+        <AutoImportReviewModal
+          runs={autoImportRuns}
+          candidates={autoImportCandidates}
+          loading={autoImportLoading}
+          errorMessage={autoImportError}
+          onClose={() => setShowAutoImportReview(false)}
         />
       )}
       {showModerationQueue && canAccessImports && (

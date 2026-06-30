@@ -558,6 +558,39 @@ export const updateFlyerImport = async (importId, updates) => {
   return data
 }
 
+export const fetchDailyFlyerImportReview = async (date = new Date()) => {
+  const d = date instanceof Date ? date : new Date(date)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const start = `${yyyy}-${mm}-${dd}T00:00:00.000`
+  const endDate = new Date(`${yyyy}-${mm}-${dd}T00:00:00`)
+  endDate.setDate(endDate.getDate() + 1)
+  const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(
+    endDate.getDate(),
+  ).padStart(2, '0')}T00:00:00.000`
+
+  const { data: runs, error: runsError } = await supabase
+    .from('flyer_import_runs')
+    .select('*')
+    .gte('started_at', start)
+    .lt('started_at', end)
+    .order('started_at', { ascending: false })
+
+  if (runsError) throw runsError
+  const runIds = (runs || []).map((r) => r.id).filter(Boolean)
+  if (!runIds.length) return { runs: [], candidates: [] }
+
+  const { data: candidates, error: candidatesError } = await supabase
+    .from('flyer_import_candidates')
+    .select('*, events(id, title, date, city, address, location, photo_url, created_at)')
+    .in('run_id', runIds)
+    .order('created_at', { ascending: false })
+
+  if (candidatesError) throw candidatesError
+  return { runs: runs || [], candidates: candidates || [] }
+}
+
 function isR2StorageEnabled() {
   const v = import.meta.env.VITE_USE_R2_STORAGE
   if (v === true) return true

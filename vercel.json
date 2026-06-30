@@ -20,8 +20,17 @@
     },
     "api/delete-account.js": {
       "maxDuration": 10
+    },
+    "api/cron-import-flyers.js": {
+      "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron-import-flyers",
+      "schedule": "0 9 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/privacy-policy.html",
