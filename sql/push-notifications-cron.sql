@@ -16,7 +16,7 @@ where jobname in ('meetmap-notification-job-runner', 'meetmap-saved-event-remind
 
 select cron.schedule(
   'meetmap-notification-job-runner',
-  '*/2 * * * *',
+  '*/10 * * * *',
   $$
   select net.http_post(
     url := (select decrypted_secret from vault.decrypted_secrets where name = 'meetmap_project_url')
@@ -33,7 +33,7 @@ select cron.schedule(
 
 select cron.schedule(
   'meetmap-saved-event-reminder-tick',
-  '*/5 * * * *',
+  '*/10 * * * *',
   $$
   select net.http_post(
     url := (select decrypted_secret from vault.decrypted_secrets where name = 'meetmap_project_url')

@@ -70,6 +70,13 @@ const buildEventsSearchOrFilter = (search) => {
 const EVENT_FETCH_PAGE_SIZE = 1000
 const EVENT_FETCH_MAX_PAGES = 50
 
+/** List/map payload — omit moderation audit columns to cut read IO. */
+const EVENT_LIST_SELECT =
+  'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, moderation_status'
+
+const EVENT_DEDUPE_SELECT =
+  'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at'
+
 const fetchProfilesByIds = async (userIds) => {
   const ids = Array.from(new Set((userIds || []).filter(Boolean)))
   if (!ids.length) return {}
@@ -116,9 +123,7 @@ const fetchOwnEventRowMatchingDedupe = async (eventData, userId) => {
   const dateKey = String(date).slice(0, 10)
   const { data: rows, error } = await supabase
     .from('events')
-    .select(
-      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
-    )
+    .select(`${EVENT_DEDUPE_SELECT}, event_attendees(count)`)
     .eq('date', dateKey)
     .eq('user_id', userId)
     .limit(80)
@@ -156,9 +161,7 @@ const tryResolveDuplicateBeforeInsert = async (eventData, userId) => {
   const dateKey = String(date).slice(0, 10)
   const { data: rows, error } = await supabase
     .from('events')
-    .select(
-      'id, user_id, title, type, date, time, location, city, address, lat, lng, description, tags, host, photo_url, featured, created_at, event_attendees(count)',
-    )
+    .select(`${EVENT_DEDUPE_SELECT}, event_attendees(count)`)
     .eq('date', dateKey)
     .limit(500)
   if (error || !rows?.length) return null
@@ -299,8 +302,7 @@ export const fetchEvents = async (filters = {}) => {
   for (let page = 0; page < EVENT_FETCH_MAX_PAGES; page++) {
     let query = supabase
       .from('events')
-      // Explicitly include `address` so the UI can always display the full street address.
-      .select('*, event_attendees(count)')
+      .select(`${EVENT_LIST_SELECT}, event_attendees(count)`)
       .order('date', { ascending: true })
       .order('id', { ascending: true })
 

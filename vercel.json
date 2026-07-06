@@ -23,6 +23,9 @@
     },
     "api/cron-import-flyers.js": {
       "maxDuration": 60
+    },
+    "api/sitemap.xml.js": {
+      "maxDuration": 15
     }
   },
   "crons": [
@@ -32,6 +35,10 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap.xml"
+    },
     {
       "source": "/privacy-policy.html",
       "destination": "/api/privacy-policy"

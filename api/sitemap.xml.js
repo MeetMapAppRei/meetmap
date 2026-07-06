@@ -42,37 +42,20 @@ async function fetchDistinctCitiesFromSupabase() {
   if (!url || !key) return []
 
   const supabase = createClient(url, key, { auth: { persistSession: false } })
-  const today = new Date().toISOString().slice(0, 10)
 
-  // Pull upcoming events and derive a distinct city list.
-  // Keep payload small: just city + updated/created timestamps if present.
-  const { data, error } = await supabase
-    .from('events')
-    .select('city, created_at, updated_at, date')
-    .gte('date', today)
-    .order('date', { ascending: true })
-    .limit(5000)
+  const { data, error } = await supabase.rpc('distinct_upcoming_event_cities', { max_rows: 1200 })
 
   if (error) {
-    console.error('[sitemap] supabase error:', error)
+    console.error('[sitemap] supabase rpc error:', error)
     return []
   }
 
-  const cities = new Map()
-  for (const row of data || []) {
-    const label = normalizeCityLabel(row?.city)
-    if (!label) continue
-    const keyLabel = label.toLowerCase()
-    const ts = row?.updated_at || row?.created_at || ''
-    const prev = cities.get(keyLabel)
-    if (!prev || (ts && String(ts) > String(prev.lastmod))) {
-      cities.set(keyLabel, { label, lastmod: ts ? String(ts).slice(0, 10) : '' })
-    }
-  }
-
-  return Array.from(cities.values())
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .slice(0, 1200) // keep sitemap size reasonable
+  return (data || [])
+    .map((row) => ({
+      label: normalizeCityLabel(row?.city_label),
+      lastmod: row?.lastmod ? String(row.lastmod).slice(0, 10) : '',
+    }))
+    .filter((row) => row.label)
 }
 
 export default async function handler(req, res) {

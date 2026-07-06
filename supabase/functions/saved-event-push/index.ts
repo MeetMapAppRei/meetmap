@@ -486,11 +486,24 @@ async function runReminderTick(req: NotifyRequest) {
   ]
   const onlyWindow = norm(req.reminderWindowId)
 
+  const { data: savedRows, error: savedErr } = await supabase
+    .from('saved_events')
+    .select('event_id')
+  if (savedErr) throw savedErr
+  const savedEventIds = Array.from(
+    new Set((savedRows || []).map((row) => String(row.event_id || '')).filter(Boolean)),
+  )
+  if (!savedEventIds.length) return { sent: 0, skipped: 0 }
+
+  const todayKey = now.toISOString().slice(0, 10)
+  const horizonKey = new Date(nowMs + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
   const { data: events, error } = await supabase
     .from('events')
     .select('id, title, date, time, location, city, address')
-    .gte('date', now.toISOString().slice(0, 10))
-    .lte('date', new Date(nowMs + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+    .in('id', savedEventIds)
+    .gte('date', todayKey)
+    .lte('date', horizonKey)
   if (error) throw error
 
   let sent = 0
