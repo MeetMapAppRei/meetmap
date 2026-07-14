@@ -4,6 +4,7 @@ import { apiUrl, apiUrlCandidates } from './apiOrigin'
 import { eventsLikelyDuplicatePair } from './eventDedupe'
 import { geocodeAddress } from './geocode'
 import { buildEventLocationQuery } from './eventLocation'
+import { normalizeEventType } from './postEventValidation'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://wyjbiqgczacqrxwulsts.supabase.co'
 // Important: fallback must be valid for your Supabase project.
@@ -414,7 +415,7 @@ export const createEvent = async (eventData, userId) => {
     // Geocoding failures should never block event creation.
   }
 
-  const insertRow = { ...enriched, user_id: userId }
+  const insertRow = { ...enriched, user_id: userId, type: normalizeEventType(enriched?.type) }
   if (insertRow.id == null || insertRow.id === '') delete insertRow.id
 
   const { data, error } = await supabase
@@ -436,6 +437,9 @@ export const createEvent = async (eventData, userId) => {
 
 export const updateEvent = async (eventId, updates) => {
   const { status, status_note, ...eventUpdates } = updates || {}
+  if (Object.prototype.hasOwnProperty.call(eventUpdates, 'type')) {
+    eventUpdates.type = normalizeEventType(eventUpdates.type)
+  }
   const { data, error } = await supabase
     .from('events')
     .update(eventUpdates)

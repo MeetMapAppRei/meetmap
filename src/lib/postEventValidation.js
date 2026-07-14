@@ -1,3 +1,29 @@
+/** Values allowed by Postgres `events_type_check`. */
+export const ALLOWED_EVENT_TYPES = ['meet', 'car show', 'track day', 'cruise']
+
+/**
+ * Coerce flyer/AI/select input to a DB-safe event type.
+ * Postgres check is case-sensitive (`Meet` fails; `meet` succeeds).
+ */
+export function normalizeEventType(raw, fallback = 'meet') {
+  const cleaned = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+  if (ALLOWED_EVENT_TYPES.includes(cleaned)) return cleaned
+  if (cleaned.includes('track') || cleaned.includes('drag') || cleaned.includes('race')) {
+    return 'track day'
+  }
+  if (cleaned.includes('cruise')) return 'cruise'
+  if (cleaned.includes('show')) return 'car show'
+  if (cleaned.includes('meet')) return 'meet'
+  const fb = String(fallback ?? 'meet')
+    .trim()
+    .toLowerCase()
+  return ALLOWED_EVENT_TYPES.includes(fb) ? fb : 'meet'
+}
+
 /** Required fields for posting a meet (client + user-facing labels). */
 export const POST_EVENT_REQUIRED_FIELDS = [
   { key: 'title', label: 'Event Name', hint: 'Add an event name' },

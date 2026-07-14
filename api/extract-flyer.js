@@ -85,6 +85,30 @@ function normalizeExtractedDates(extracted) {
   }
 }
 
+const ALLOWED_EVENT_TYPES = ['meet', 'car show', 'track day', 'cruise']
+
+function normalizeExtractedType(raw) {
+  const cleaned = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+  if (ALLOWED_EVENT_TYPES.includes(cleaned)) return cleaned
+  if (cleaned.includes('track') || cleaned.includes('drag') || cleaned.includes('race')) {
+    return 'track day'
+  }
+  if (cleaned.includes('cruise')) return 'cruise'
+  if (cleaned.includes('show')) return 'car show'
+  if (cleaned.includes('meet')) return 'meet'
+  return 'meet'
+}
+
+function normalizeExtracted(extracted) {
+  const withDates = normalizeExtractedDates(extracted)
+  if (!withDates || typeof withDates !== 'object') return withDates
+  return { ...withDates, type: normalizeExtractedType(withDates.type) }
+}
+
 const looksLikeUsZip = (s) => /\b\d{5}(?:-\d{4})?\b/.test(String(s || ''))
 
 const US_STATE_ABBR =
@@ -224,6 +248,35 @@ function guessMediaTypeFromUrl(url) {
   return 'image/jpeg'
 }
 
+function sniffImageMediaType(buf) {
+  if (!buf || buf.length < 4) return null
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg'
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png'
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif'
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return 'image/webp'
+  }
+  return null
+}
+
+function resolveImageMediaType(declared, buf) {
+  const sniffed = sniffImageMediaType(buf)
+  const declaredClean =
+    typeof declared === 'string' && declared.startsWith('image/') ? declared : null
+  const resolved = sniffed || declaredClean || 'image/jpeg'
+  return { resolved, sniffed, declared: declaredClean }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -256,10 +309,12 @@ ${contextText}`
 
     // If the client already uploaded the image bytes, use that directly.
     if (imageBase64) {
-      const mt =
+      const declared =
         typeof mediaTypeInput === 'string' && mediaTypeInput.startsWith('image/')
           ? mediaTypeInput
           : guessMediaTypeFromUrl(imageUrl)
+      const imgBuf = Buffer.from(String(imageBase64), 'base64')
+      const { resolved: mt } = resolveImageMediaType(declared, imgBuf)
 
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -322,7 +377,7 @@ ${contextText}`
 
       const text = data.content?.[0]?.text || ''
       const clean = text.replace(/```json|```/g, '').trim()
-      const extracted = normalizeExtractedDates(JSON.parse(clean))
+      const extracted = normalizeExtracted(JSON.parse(clean))
       const verified = await verifyAndNormalizeAddress(extracted)
       if (correlationId)
         console.log('[meetmap]', 'extract-flyer', 'ok', { correlationId, mode: 'base64' })
@@ -475,11 +530,16 @@ ${contextText}`
 
     // Claude expects base64 image data, but we can fall back to providing
     // the URL directly when our image download fails.
+    const urlImgBuf = base64 ? Buffer.from(base64, 'base64') : null
+    const resolvedMediaType = urlImgBuf
+      ? resolveImageMediaType(mediaType, urlImgBuf).resolved
+      : mediaType
+
     const imageBlock =
-      base64 && mediaType
+      base64 && resolvedMediaType
         ? {
             type: 'image',
-            source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 },
+            source: { type: 'base64', media_type: resolvedMediaType || 'image/jpeg', data: base64 },
           }
         : {
             type: 'image',
@@ -528,7 +588,7 @@ ${contextText}`
 
     const text = data.content?.[0]?.text || ''
     const clean = text.replace(/```json|```/g, '').trim()
-    const extracted = normalizeExtractedDates(JSON.parse(clean))
+    const extracted = normalizeExtracted(JSON.parse(clean))
     const verified = await verifyAndNormalizeAddress(extracted)
 
     if (correlationId)

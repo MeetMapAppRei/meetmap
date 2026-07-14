@@ -18,6 +18,7 @@ import { buildEventLocationQuery, getDirectionsUrl } from '../lib/eventLocation'
 import { useDirectionsAppPreference } from '../lib/useDirectionsAppPreference'
 import { makeClientUuid } from '../lib/clientUuid'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
+import { normalizeEventType } from '../lib/postEventValidation'
 import ReportEventModal from './ReportEventModal'
 
 const TYPE_COLORS = {
@@ -178,7 +179,7 @@ function EditForm({ event, onSaved, onCancel }) {
       const safeLocation = String(form.location || '').trim() || String(form.city || '').trim()
       const updates = {
         title: form.title,
-        type: form.type,
+        type: normalizeEventType(form.type),
         date: form.date,
         time: form.time,
         location: safeLocation,
@@ -639,7 +640,7 @@ export default function EventDetail({
       try {
         shareBase = window.location.origin
       } catch {
-        shareBase = 'https://findcarmeets.com'
+        shareBase = 'https://www.findcarmeets.com'
       }
     }
     const normalized = String(shareBase).replace(/\/$/, '')

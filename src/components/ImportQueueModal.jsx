@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTheme } from '../lib/useTheme'
+import { normalizeEventType } from '../lib/postEventValidation'
 
 const TYPE_LABELS = {
   meet: 'Meet',
@@ -75,7 +76,7 @@ export default function ImportQueueModal({
 
   const makeDraft = (i) => ({
     title: i.title || '',
-    type: i.type || 'meet',
+    type: normalizeEventType(i.type),
     date: i.date || '',
     time: i.time || '',
     location: i.location || '',

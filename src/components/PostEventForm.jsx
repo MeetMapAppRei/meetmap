@@ -16,9 +16,10 @@ import {
   getMissingPostEventFields,
   inferMissingFieldsFromDbError,
   messageForMissingPostEventFields,
+  normalizeEventType,
   POST_EVENT_REQUIRED_FIELDS,
 } from '../lib/postEventValidation'
-import { compressImageForUploadUnder } from '../lib/compressImageForUpload'
+import { compressImageForUpload, compressImageForUploadUnder } from '../lib/compressImageForUpload'
 import { eventsLikelyDuplicatePair } from '../lib/eventDedupe'
 import { makeClientUuid } from '../lib/clientUuid'
 import { savePostPrefill, loadAndConsumePostPrefill, clearPostPrefill } from '../lib/postPrefill'
@@ -52,6 +53,43 @@ function userMessageForFlyerScanError(message) {
     return 'Flyer import is temporarily unavailable. Please try again later or fill in the form manually.'
   }
   return m
+}
+
+function sniffImageMediaTypeFromFile(file) {
+  return new Promise((resolve) => {
+    if (!file || typeof file.arrayBuffer !== 'function') {
+      resolve(null)
+      return
+    }
+    file
+      .slice(0, 16)
+      .arrayBuffer()
+      .then((buf) => {
+        const b = new Uint8Array(buf)
+        if (b.length < 4) {
+          resolve(null)
+          return
+        }
+        if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) resolve('image/jpeg')
+        else if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47)
+          resolve('image/png')
+        else if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) resolve('image/gif')
+        else resolve(null)
+      })
+      .catch(() => resolve(null))
+  })
+}
+
+function isCapacitorNative() {
+  try {
+    const cap = typeof window !== 'undefined' ? window.Capacitor : null
+    if (!cap) return false
+    if (typeof cap.isNativePlatform === 'function') return cap.isNativePlatform()
+    const platform = typeof cap.getPlatform === 'function' ? cap.getPlatform() : ''
+    return platform === 'android' || platform === 'ios'
+  } catch {
+    return false
+  }
 }
 
 function normalizeFlyerDates(info) {
@@ -470,7 +508,11 @@ export default function PostEventForm({ onClose, onPosted }) {
   useEffect(() => {
     const snap = loadAndConsumePostPrefill()
     if (!snap?.form) return
-    setForm((prev) => ({ ...prev, ...snap.form }))
+    setForm((prev) => ({
+      ...prev,
+      ...snap.form,
+      type: normalizeEventType(snap.form?.type, prev.type),
+    }))
     if (snap.flyerDates?.length) setFlyerDates(snap.flyerDates)
     if (snap.coords?.lat != null && snap.coords?.lng != null) {
       setCoords(snap.coords)
@@ -609,18 +651,34 @@ export default function PostEventForm({ onClose, onPosted }) {
     let flyerCorrelationId = ''
     try {
       flyerCorrelationId = makeClientUuid()
-      // Same size budget as uploadEventPhoto → R2 relay: smaller base64 JSON, fewer mobile failures.
-      // Also normalizes HEIC/large originals to JPEG before we set `photo` for submit.
-      const ready = await compressImageForUploadUnder(file, R2_RELAY_IMAGE_MAX_BYTES, {
-        maxWidth: 1400,
-        quality: 0.72,
-      })
+      // Android WebView often labels JPEG gallery picks as image/png — always re-encode on native.
+      const ready = isCapacitorNative()
+        ? await (async () => {
+            let f = await compressImageForUpload(file, {
+              maxWidth: 1400,
+              quality: 0.72,
+              forceOutput: true,
+            })
+            if (f.size > R2_RELAY_IMAGE_MAX_BYTES) {
+              f = await compressImageForUploadUnder(f, R2_RELAY_IMAGE_MAX_BYTES, {
+                maxWidth: 1400,
+                quality: 0.72,
+              })
+            }
+            return f
+          })()
+        : await compressImageForUploadUnder(file, R2_RELAY_IMAGE_MAX_BYTES, {
+            maxWidth: 1400,
+            quality: 0.72,
+          })
+
+      const readySniffed = await sniffImageMediaTypeFromFile(ready)
 
       // Reuse the flyer as the event photo — must be `ready`, not the original file.
       setPhoto(ready)
       setPhotoPreview(URL.createObjectURL(ready))
 
-      const mediaType = ready.type || 'image/jpeg'
+      const mediaType = readySniffed || ready.type || 'image/jpeg'
       // Signed-in: upload to storage first, then call extract with a small JSON body. Large base64
       // POSTs often fail in Android WebView; server fetches the public image URL instead.
       let info = null
@@ -661,7 +719,7 @@ export default function PostEventForm({ onClose, onPosted }) {
       setForm((prev) => ({
         ...prev,
         title: info.title || prev.title,
-        type: info.type || prev.type,
+        type: normalizeEventType(info.type, prev.type),
         date: primaryDate || prev.date,
         time: info.time || prev.time,
         location: info.location || prev.location,
@@ -784,7 +842,7 @@ export default function PostEventForm({ onClose, onPosted }) {
       eventPayload = {
         id: clientEventId,
         title: form.title,
-        type: form.type,
+        type: normalizeEventType(form.type),
         date: form.date,
         time: form.time,
         // DB requires location, so if it's omitted we safely fall back to city.
