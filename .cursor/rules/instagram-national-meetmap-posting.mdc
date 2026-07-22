@@ -1,0 +1,56 @@
+---
+description: National Instagram city-search → screenshot → Meetmap posting (no IG engagement)
+alwaysApply: true
+---
+
+# National Instagram → Meetmap workflow
+
+Use this when the user asks to **run the national IG event workflow**, **national Instagram → Meetmap flyer workflow**, **search other major cities**, **events nationwide**, **post events from Instagram** (browse-only), or similar.
+
+**Overrides `instagram-event-posting.mdc` social actions** for these runs: do **not** like, follow, repost, comment, or DM.
+
+## Browser
+
+- Open or reuse Instagram in the Cursor browser. Stop and ask the user if login, 2FA, captcha, or verification appears.
+- Search via keyword URLs, not only the home feed:
+  `https://www.instagram.com/explore/search/keyword/?q=car%20meet%20[CITY]%20july%202026`
+- Also try: `cars and coffee [city] july 2026`, `[event name] [city]`, etc.
+- Rotate major US cities: LA, Houston, Dallas, Atlanta, Phoenix, Denver, Vegas, Miami, Seattle, Nashville, San Diego, Austin, Charlotte, Cleveland, Chicago, Portland, etc.
+
+## Event eligibility
+
+Same as `instagram-event-posting.mdc`: public US car/automotive events, **future** dated, with **specific address or venue** on the flyer/caption.
+
+Skip: private/DM-location, TBA location, recurring with no date, past dates, duplicates already on the map, grid-only shots without one clear event.
+
+## Screenshots
+
+- Save to `instagram-events/run[N]-national/` under meetmap root (increment `N` each session, e.g. `run4-national`).
+- Also copy from Cursor temp: `AppData\Local\Temp\cursor\screenshots\run*-national-*.png`.
+- Filename pattern: `run[N]-national-[city]-[event-slug]-[date]-flyer.png`.
+- Open individual posts for clean flyer+caption shots; grid screenshots are OK when one event dominates.
+
+## Post to Meetmap
+
+From meetmap root:
+
+```powershell
+npx vercel env pull .env.local --environment=production --yes
+node scripts/post-local-flyers.mjs instagram-events/run[N]-national
+```
+
+- Script: `scripts/post-local-flyers.mjs` (extract API defaults to `meetmap-gilt.vercel.app`).
+- Use subfolders per batch to avoid re-posting duplicates (`run4-national-batch2`, etc.).
+- Report: posted, duplicate skipped, failed (geocode, missing date/city, past date).
+
+## Run target
+
+- Default: **15–20 new posted events** nationwide unless the user gives another number.
+- Prefer **geographic spread** over volume in one city.
+- End summary: cities searched, count posted/skipped/failed, screenshot folder, cities to retry next time.
+
+## Trigger phrases (examples)
+
+- "Run the national IG event workflow"
+- "Search Instagram for events in other major cities and post to Meetmap"
+- "Continue the national flyer run" / "pick up run4-national"

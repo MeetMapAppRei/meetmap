@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const stage = String(body.stage || '').slice(0, 80)
     const message = String(body.message || '').slice(0, 400)
     const code = String(body.code || '').slice(0, 80)
-    const details = String(body.details || '').slice(0, 200)
+    const details = String(body.details || '').slice(0, 800)
     const platform = String(body.platform || '').slice(0, 40)
     const online = typeof body.online === 'boolean' ? body.online : null
     const url = String(body.url || '').slice(0, 220)
@@ -25,6 +25,8 @@ export default async function handler(req, res) {
     const hasPhoto = !!body.hasPhoto
     const userAgent = String(body.userAgent || '').slice(0, 240)
     const correlationId = String(body.correlationId || '').slice(0, 80)
+    const hypothesisId = String(body.hypothesisId || '').slice(0, 20)
+    const location = String(body.location || '').slice(0, 120)
 
     // Structured one-line log for easy filtering in Vercel runtime logs.
     console.error(
@@ -33,6 +35,8 @@ export default async function handler(req, res) {
         at: now,
         event,
         stage,
+        location: location || undefined,
+        hypothesisId: hypothesisId || undefined,
         correlationId: correlationId || undefined,
         message,
         code,

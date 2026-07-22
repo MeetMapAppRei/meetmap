@@ -2,6 +2,8 @@
 
 Google Play accepts each **`versionCode` only once** for the whole app. If upload says _"Version code X has already been used"_, bump to **X + 1** and upload a new signed AAB.
 
+**Target API (required for updates after Aug 31, 2026):** Meet Map uses Capacitor **8** with `targetSdkVersion` / `compileSdkVersion` **36** (Android 16) in `android/variables.gradle`. Confirm the Play Console bundle details show target API **36** after upload.
+
 ## Before every new Play upload
 
 1. **Bump + build + sync** (recommended one command):

@@ -14,7 +14,11 @@ import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
 import { getAppOrigin } from '../lib/apiOrigin'
 import { areEventCoordsPlausible, geocodeAddress } from '../lib/geocode'
-import { buildEventLocationQuery, getDirectionsUrl } from '../lib/eventLocation'
+import {
+  buildEventLocationQuery,
+  formatEventAddressLine,
+  getDirectionsUrl,
+} from '../lib/eventLocation'
 import { useDirectionsAppPreference } from '../lib/useDirectionsAppPreference'
 import { makeClientUuid } from '../lib/clientUuid'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
@@ -1037,7 +1041,7 @@ export default function EventDetail({
               marginBottom: 6,
             }}
           >
-            📍 {event.address || `${event.location} · ${event.city}`}
+            📍 {formatEventAddressLine(event)}
           </div>
           <div
             style={{

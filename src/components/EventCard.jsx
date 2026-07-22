@@ -1,7 +1,7 @@
 import { useTheme } from '../lib/useTheme'
 import { getEventQuality } from '../lib/eventQuality'
 import { formatEventTime } from '../lib/formatEventTime'
-import { getDirectionsUrl } from '../lib/eventLocation'
+import { formatEventAddressLine, getDirectionsUrl } from '../lib/eventLocation'
 import { useDirectionsAppPreference } from '../lib/useDirectionsAppPreference'
 
 const TYPE_COLORS = {
@@ -259,7 +259,7 @@ export default function EventCard({ event, onClick, saved = false, onToggleSaved
             marginBottom: 4,
           }}
         >
-          📍 {event.address || `${event.location} · ${event.city}`}
+          📍 {formatEventAddressLine(event)}
         </div>
 
         <div

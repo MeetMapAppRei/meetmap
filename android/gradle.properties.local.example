@@ -1,0 +1,4 @@
+# Local-only Gradle overrides (not committed). Copy to gradle.properties.local on this machine.
+# Cap 8 needs JDK 21 for the Gradle daemon on Windows when PATH still points at JDK 17:
+org.gradle.java.home=C\:\\Program Files\\Android\\Android Studio\\jbr
+org.gradle.java.installations.paths=C\:\\Program Files\\Android\\Android Studio\\jbr,C\:\\Program Files\\Eclipse Adoptium\\jdk-17.0.19.10-hotspot

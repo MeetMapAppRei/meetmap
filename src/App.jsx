@@ -23,6 +23,7 @@ import {
   fetchEventReports,
   resolveEventReport,
   upsertDevicePushToken,
+  setDevicePushTokenActive,
   upsertNotificationPreferences,
   fetchNotificationPreferences,
 } from './lib/supabase'
@@ -33,10 +34,12 @@ import {
   getWebNotificationPermission,
   requestWebNotificationPermission,
   initializeNativePush,
+  refreshNativePushRegistration,
   isNativePushSupported,
   getNativePushPlatform,
   getNativePushPermission,
   getWebAlertsUnavailableMessage,
+  addNativePushTapListener,
 } from './lib/pushNotifications'
 import AuthModal from './components/AuthModal'
 import NotificationSettingsModal from './components/NotificationSettingsModal'
@@ -62,7 +65,6 @@ import { makeClientUuid } from './lib/clientUuid'
 import { appAlert } from './lib/appAlert'
 import { isEventUpcoming } from './lib/eventSchedule'
 import { getCurrentCoords } from './lib/geolocation'
-import { addNativePushTapListener } from './lib/pushNotifications'
 
 const parseCsvEnv = (value) =>
   String(value || '')
@@ -726,12 +728,35 @@ function AppInner() {
     }
 
     let mounted = true
-    // Important: do NOT request/register push on startup (Android can crash here if FCM isn't configured).
-    // Only read permission state. The user must explicitly enable Alerts.
+    // Do not prompt on startup. If permission is already granted, refresh the FCM/APNs
+    // token so we don't keep upserting a stale UNREGISTERED token from localStorage.
     getNativePushPermission()
-      .then((perm) => {
+      .then(async (perm) => {
         if (!mounted) return
-        setNotificationPermission(perm === 'granted' ? 'granted' : 'denied')
+        const granted = perm === 'granted'
+        setNotificationPermission(granted ? 'granted' : 'denied')
+        if (!granted) return
+        const result = await refreshNativePushRegistration({
+          onToken: (token) => {
+            if (token && mounted) setPushToken(token)
+          },
+          onNotificationTap: (action) => {
+            void openNotificationLink(action, (id) => openEventByIdRef.current?.(id))
+          },
+          onNotificationReceived: (notification) => {
+            const title = String(notification?.title || 'Meet Map').trim()
+            const body = String(notification?.body || 'New alert for a saved event.').trim()
+            void appAlert(`${title}\n\n${body}`)
+          },
+        })
+        if (!mounted) return
+        if (result?.token) {
+          const previous = getStoredNativePushToken()
+          if (previous && previous !== result.token) {
+            setDevicePushTokenActive(previous, false).catch(() => {})
+          }
+          setPushToken(result.token)
+        }
       })
       .catch(() => {
         if (!mounted) return
@@ -842,6 +867,11 @@ function AppInner() {
           onNotificationTap: (action) => {
             void openNotificationLink(action, (id) => openEventByIdRef.current?.(id))
           },
+          onNotificationReceived: (notification) => {
+            const title = String(notification?.title || 'Meet Map').trim()
+            const body = String(notification?.body || 'New alert for a saved event.').trim()
+            void appAlert(`${title}\n\n${body}`)
+          },
           onRegistrationError: (error) => {
             console.error('Native push registration failed:', error)
             void appAlert(
@@ -852,7 +882,13 @@ function AppInner() {
           },
         })
         setNotificationPermission(result?.enabled ? 'granted' : 'denied')
-        if (result?.token) setPushToken(result.token)
+        if (result?.token) {
+          const previous = getStoredNativePushToken()
+          if (previous && previous !== result.token) {
+            setDevicePushTokenActive(previous, false).catch(() => {})
+          }
+          setPushToken(result.token)
+        }
         if (result?.enabled && user?.id) {
           await upsertNotificationPreferences(user.id, {})
           setShowNotificationSettings(true)

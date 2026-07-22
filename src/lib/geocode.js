@@ -49,7 +49,7 @@ async function tryNominatim(query, country) {
   const res = await fetch(url, {
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'MeetMap/1.0 (+https://findcarmeets.com)',
+      'User-Agent': 'MeetMap/1.0 (+https://www.findcarmeets.com)',
     },
   })
   if (!res.ok) return null
@@ -72,19 +72,120 @@ export async function geocodeAddress(address, options = {}) {
   const query = enrichDirectionsQuery(raw, cityHint)
   const country = inferGeocodeCountry(raw, cityHint)
 
+  // #region agent log
+  const dbg = (message, hypothesisId, data) => {
+    const payload = {
+      sessionId: '34c561',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'geocode.js:geocodeAddress',
+      message,
+      data: { ...data, hasMapboxToken: Boolean(MAPBOX_TOKEN) },
+      timestamp: Date.now(),
+    }
+    fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '34c561' },
+      body: JSON.stringify(payload),
+    }).catch(() => {})
+    try {
+      const origins = [
+        typeof window !== 'undefined' && window?.Capacitor ? 'https://www.findcarmeets.com' : '',
+        typeof window !== 'undefined' ? window.location?.origin : '',
+        'https://meetmap-gilt.vercel.app',
+      ].filter(Boolean)
+      const body = JSON.stringify({
+        event: 'debug_geocode',
+        stage: 'geocodeAddress',
+        hypothesisId,
+        message,
+        details: JSON.stringify(payload.data).slice(0, 800),
+        platform:
+          typeof window !== 'undefined' && window?.Capacitor?.getPlatform
+            ? window.Capacitor.getPlatform()
+            : 'web',
+      })
+      origins.slice(0, 2).forEach((origin) => {
+        fetch(`${origin}/api/client-log`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          keepalive: true,
+          cache: 'no-store',
+          credentials: 'omit',
+        }).catch(() => {})
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+  dbg('geocode_start', 'B', {
+    raw: raw.slice(0, 120),
+    query: query.slice(0, 160),
+    country,
+    cityHint: String(cityHint || '').slice(0, 80),
+  })
+  // #endregion
+
   let lastError
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, retryDelayMs * attempt))
       }
-      const mapbox = await tryMapbox(query, country)
+      let mapboxStatus = null
+      let mapboxPlace = null
+      let mapbox = null
+      try {
+        if (!MAPBOX_TOKEN) {
+          mapboxStatus = 'no_token'
+        } else {
+          const countryParam = country ? `&country=${encodeURIComponent(country)}` : ''
+          const mbUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${encodeURIComponent(MAPBOX_TOKEN)}&limit=1${countryParam}`
+          const mbRes = await fetch(mbUrl, { headers: { Accept: 'application/json' } })
+          mapboxStatus = mbRes.status
+          const mb = mbRes.ok ? await mbRes.json().catch(() => null) : null
+          mapboxPlace = mb?.features?.[0]?.place_name || null
+          const center = mb?.features?.[0]?.center
+          if (Array.isArray(center) && center.length >= 2) {
+            const coords = { lng: Number(center[0]), lat: Number(center[1]) }
+            mapbox = coordsPlausibleForCountry(coords, country) ? coords : null
+            if (!mapbox) mapboxStatus = `${mbRes.status}_implausible`
+          }
+        }
+      } catch (e) {
+        mapboxStatus = `throw:${String(e?.message || e).slice(0, 80)}`
+      }
+      // #region agent log
+      dbg('geocode_mapbox', 'B', {
+        attempt,
+        mapboxStatus,
+        mapboxPlace: mapboxPlace ? String(mapboxPlace).slice(0, 120) : null,
+        mapboxHit: Boolean(mapbox),
+      })
+      // #endregion
       if (mapbox) return mapbox
       const nominatim = await tryNominatim(query, country)
+      // #region agent log
+      dbg('geocode_nominatim', 'C', {
+        attempt,
+        nominatimHit: Boolean(nominatim),
+        nominatimLat: nominatim?.lat ?? null,
+      })
+      // #endregion
       if (nominatim) return nominatim
+      // #region agent log
+      dbg('geocode_miss', 'B', { attempt, query: query.slice(0, 160) })
+      // #endregion
       return null
     } catch (e) {
       lastError = e
+      // #region agent log
+      dbg('geocode_throw', 'B', {
+        attempt,
+        err: String(e?.message || e).slice(0, 120),
+      })
+      // #endregion
     }
   }
   throw lastError

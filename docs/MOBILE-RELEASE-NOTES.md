@@ -1,5 +1,50 @@
 # Mobile release notes
 
+## 1.1.0 (Android versionCode 44) — Capacitor 8 / API 36
+
+**Google Play "What's new" (paste):**
+
+```
+• Updated to Android 16 (API 36) for Google Play target API requirements
+• Capacitor 8 native shell upgrade
+• Bug fixes and stability improvements
+```
+
+### What to test (Android versionCode 44)
+
+1. **Cold start** — App opens to map/list without a white screen.
+2. **Near Me** — Allow location; nearby events load (Cap 8 geolocation timeout behavior).
+3. **Back button** — Hardware/gesture back closes overlays then exits as before.
+4. **Push prompt** — Notification permission still works on Android 13+.
+5. **Edge-to-edge** — Headers and bottom nav are not clipped under system bars.
+
+### Native / tooling notes
+
+- Capacitor **8.x**; Android `minSdk` **24**, `compileSdk`/`targetSdk` **36**
+- Requires **Node.js 22+**, **JDK 21** (Android Studio JBR), Android SDK **36**
+- iOS deployment target **15.0** (run `pod install` on Mac after pull)
+- **Mac / iOS build:** after pull, say **I'm on my Mac** or run `npm run mac:arrival` (pull + `npm ci` + `cap:sync`). Needs **Xcode 26+**. Then `npm run cap:open:ios`, archive/upload from Xcode.
+
+---
+
+## 1.1.0 (Android versionCode 43 / iOS build 9)
+
+**Google Play / App Store "What's new" (paste):**
+
+```
+• Event cards now show city and state with the street address so you can tell where a meet is at a glance
+• Bug fixes and stability improvements
+```
+
+### What to test (Android versionCode 43 / iOS build 9)
+
+1. **Street-only address** — Open LIST and find an event whose street line has no city (e.g. “152 Rt. 46”); the card should also show the town and state (e.g. Rockaway, NJ).
+2. **Full address** — Confirm events that already include city/state in the address still look correct (no duplicated city line).
+3. **Event detail** — Open that same event; the detail screen address line should match the card.
+4. **Directions** — Directions from the card still open the preferred maps app to the right place.
+
+---
+
 ## 1.1.0 (Android versionCode 42)
 
 **Google Play "What's new" (paste):**

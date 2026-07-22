@@ -8,17 +8,18 @@ Your app is a **web app inside a native shell** (Capacitor). Follow sections **i
 
 ### A1. Install tools
 
-1. Install **Node.js** (LTS) from https://nodejs.org/
+1. Install **Node.js 22+** (LTS) from https://nodejs.org/ (Capacitor 8 requires Node 22+).
 2. Install **Git** if you don’t have it (optional but recommended).
 3. **For Android only (Windows is OK):**
-   - Install **Android Studio** from https://developer.android.com/studio
-   - Open Android Studio once → complete the wizard → let it install **Android SDK**.
+   - Install **Android Studio** (Otter / 2025.2.1+ recommended) from https://developer.android.com/studio
+   - Open Android Studio once → complete the wizard → install **Android SDK 36** and use the bundled **JDK 21** (JBR).
    - In Android Studio: **Settings** (or **Preferences** on Mac) → **Languages & Frameworks** → **Android SDK** → note the **Android SDK location** (you may need it for `ANDROID_HOME`).
-4. **For iPhone only:** you need a **Mac** with **Xcode** from the Mac App Store, and **CocoaPods**:
+   - This project’s Gradle uses Android Studio’s JBR via `android/gradle.properties` (`org.gradle.java.home`).
+4. **For iPhone only:** you need a **Mac** with **Xcode 26+** from the Mac App Store, and **CocoaPods**:
    ```bash
    sudo gem install cocoapods
    ```
-   (iOS steps below; skip until you have a Mac.)
+   iOS deployment target is **15.0**. (iOS steps below; skip until you have a Mac.)
 
 ### A2. Google accounts (Android)
 
@@ -282,7 +283,8 @@ Then in Xcode: **Product** → **Archive** again for a new build.
 
 | File                       | Purpose                                                                  |
 | -------------------------- | ------------------------------------------------------------------------ |
-| `capacitor.config.json`    | App id `com.meetmap.app`, name, `webDir: dist`                           |
+| `capacitor.config.json`    | App id, name, `webDir: dist` (Capacitor 8)                               |
+| `android/variables.gradle` | `minSdk` 24, `compileSdk`/`targetSdk` **36** (Play API requirement)      |
 | `.env`                     | `VITE_APP_ORIGIN`, Supabase, Mapbox (**not** committed if `.gitignore`d) |
 | `android/app/build.gradle` | `applicationId`, `versionCode`, `versionName`                            |
 | `vite.config.js`           | `base: './'` for Capacitor                                               |

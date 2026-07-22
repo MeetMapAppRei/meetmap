@@ -19,6 +19,7 @@ android/.idea/
 android/.gradle/
 android/app/build/
 android/local.properties
+android/gradle.properties.local
 android/app/release/
 /android/app/google-services.json
 
@@ -30,3 +31,4 @@ ios/capacitor-cordova-ios-plugins/
 
 .DS_Store
 Thumbs.db
+.env*.local

@@ -10,7 +10,7 @@ export function getAppOrigin() {
     // Web should use same-origin API routes.
     // Capacitor can miss injected env values, so keep a safe production fallback there.
     if (typeof window !== 'undefined' && window?.Capacitor) {
-      return 'https://findcarmeets.com'
+      return 'https://www.findcarmeets.com'
     }
     return ''
   }
@@ -20,12 +20,12 @@ export function getAppOrigin() {
 /** Where Supabase auth emails (password reset, etc.) should redirect after the user clicks the link. */
 export function getAuthRedirectUrl() {
   if (typeof window !== 'undefined' && window?.Capacitor) {
-    return getAppOrigin() || 'https://findcarmeets.com'
+    return getAppOrigin() || 'https://www.findcarmeets.com'
   }
   if (typeof window !== 'undefined' && /^https?:\/\//i.test(window.location?.origin || '')) {
     return window.location.origin
   }
-  return getAppOrigin() || 'https://findcarmeets.com'
+  return getAppOrigin() || 'https://www.findcarmeets.com'
 }
 
 /** @param {string} path e.g. `/api/extract-flyer` */
@@ -44,12 +44,12 @@ export function apiUrl(path) {
 export function apiUrlCandidates(path) {
   const p = path.startsWith('/') ? path : `/${path}`
   const primary = apiUrl(p)
+  // Never use apex findcarmeets.com for POST — it 308-redirects to www and WebView fetch fails.
   const bases = [
     primary.startsWith('http') ? primary : null,
     typeof window !== 'undefined' && primary.startsWith('/')
       ? `${window.location.origin}${primary}`
       : null,
-    `https://findcarmeets.com${p}`,
     `https://www.findcarmeets.com${p}`,
     `https://meetmap-gilt.vercel.app${p}`,
   ].filter(Boolean)

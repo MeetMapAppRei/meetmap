@@ -615,10 +615,12 @@ async function fileToBase64Payload(file) {
         const comma = result.indexOf(',')
         resolve(comma >= 0 ? result.slice(comma + 1) : '')
       } catch (e) {
-        reject(e)
+        reject(e instanceof Error ? e : new Error('Failed to read image for upload'))
       }
     }
-    reader.onerror = reject
+    // Android WebView may surface ProgressEvent here — wrap so retries can see a real Error message.
+    reader.onerror = () => reject(new Error('Failed to read image for upload'))
+    reader.onabort = () => reject(new Error('Image read was aborted'))
     reader.readAsDataURL(file)
   })
 }
@@ -629,9 +631,70 @@ function errorWithStatus(message, status) {
   return e
 }
 
+function agentDebugLog(payload) {
+  // #region agent log
+  const body = {
+    sessionId: 'a372f1',
+    timestamp: Date.now(),
+    runId: payload.runId || 'pre-fix',
+    hypothesisId: payload.hypothesisId || '',
+    location: payload.location || '',
+    message: payload.message || '',
+    data: payload.data || {},
+  }
+  fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a372f1' },
+    body: JSON.stringify(body),
+  }).catch(() => {})
+  try {
+    const endpoints = apiUrlCandidates('/api/client-log')
+    const logBody = JSON.stringify({
+      event: 'upload_debug',
+      stage: payload.location || 'upload',
+      location: payload.location || '',
+      hypothesisId: payload.hypothesisId || '',
+      message: payload.message || '',
+      details: JSON.stringify(payload.data || {}).slice(0, 700),
+      correlationId: payload.data?.correlationId || '',
+      hasPhoto: true,
+    })
+    for (const endpoint of endpoints.slice(0, 3)) {
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: logBody,
+        keepalive: true,
+        cache: 'no-store',
+        credentials: 'omit',
+      }).catch(() => {})
+    }
+  } catch {}
+  // #endregion
+}
+
 /** Server relay (JSON + base64) — avoids mobile browser PUT/CORS issues to R2. */
 async function relayUploadToR2(file, key, token, correlationId, contentTypeHint) {
-  const base64Data = await fileToBase64Payload(file)
+  let base64Data = ''
+  try {
+    base64Data = await fileToBase64Payload(file)
+  } catch (e) {
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'E',
+      location: 'supabase.js:relayUploadToR2:base64',
+      message: 'fileToBase64 failed',
+      data: {
+        correlationId,
+        errName: e?.name || '',
+        errMsg: String(e?.message || e).slice(0, 160),
+        fileSize: file?.size ?? null,
+        fileType: file?.type || '',
+      },
+    })
+    // #endregion
+    throw e
+  }
   const ct =
     (typeof contentTypeHint === 'string' && contentTypeHint.startsWith('image/')
       ? contentTypeHint
@@ -648,6 +711,27 @@ async function relayUploadToR2(file, key, token, correlationId, contentTypeHint)
 
   const shouldRetryRelay = (status) =>
     status == null || status === 429 || status === 502 || status === 503 || status === 504
+
+  // #region agent log
+  agentDebugLog({
+    hypothesisId: 'B',
+    location: 'supabase.js:relayUploadToR2:start',
+    message: 'relay upload start',
+    data: {
+      correlationId,
+      fileSize: file?.size ?? null,
+      payloadChars: relayPayload.length,
+      hostCount: relayUrls.length,
+      hosts: relayUrls.map((u) => {
+        try {
+          return new URL(u).host
+        } catch {
+          return String(u).slice(0, 40)
+        }
+      }),
+    },
+  })
+  // #endregion
 
   for (const relayUrl of relayUrls) {
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -667,14 +751,74 @@ async function relayUploadToR2(file, key, token, correlationId, contentTypeHint)
           cache: 'no-store',
         })
         const relayJson = await relay.json().catch(() => ({}))
-        if (relay.ok) return
+        if (relay.ok) {
+          // #region agent log
+          agentDebugLog({
+            hypothesisId: 'B',
+            location: 'supabase.js:relayUploadToR2:ok',
+            message: 'relay upload ok',
+            data: {
+              correlationId,
+              host: (() => {
+                try {
+                  return new URL(relayUrl).host
+                } catch {
+                  return ''
+                }
+              })(),
+              attempt,
+            },
+          })
+          // #endregion
+          return
+        }
         lastRelayErr = errorWithStatus(
           relayJson.error || `Upload relay failed (${relay.status})`,
           relay.status,
         )
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: 'B',
+          location: 'supabase.js:relayUploadToR2:http',
+          message: 'relay upload http error',
+          data: {
+            correlationId,
+            host: (() => {
+              try {
+                return new URL(relayUrl).host
+              } catch {
+                return ''
+              }
+            })(),
+            attempt,
+            status: relay.status,
+            err: String(lastRelayErr.message || '').slice(0, 120),
+          },
+        })
+        // #endregion
         if (!shouldRetryRelay(relay.status)) break
       } catch (e) {
         lastRelayErr = e instanceof Error ? e : new Error(String(e))
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: 'C',
+          location: 'supabase.js:relayUploadToR2:fetch',
+          message: 'relay upload fetch threw',
+          data: {
+            correlationId,
+            host: (() => {
+              try {
+                return new URL(relayUrl).host
+              } catch {
+                return ''
+              }
+            })(),
+            attempt,
+            errName: lastRelayErr?.name || '',
+            errMsg: String(lastRelayErr?.message || lastRelayErr).slice(0, 160),
+          },
+        })
+        // #endregion
       }
     }
   }
@@ -688,6 +832,25 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
     data: { session },
   } = await supabase.auth.getSession()
   const token = session?.access_token
+  const expiresAt = session?.expires_at || null
+  // #region agent log
+  agentDebugLog({
+    hypothesisId: 'A',
+    location: 'supabase.js:uploadImageViaR2Presign:session',
+    message: 'upload session check',
+    data: {
+      correlationId,
+      hasToken: Boolean(token),
+      expiresAt,
+      expiresInSec: expiresAt ? expiresAt - Math.floor(Date.now() / 1000) : null,
+      folder: body?.folder || '',
+      fileSize: file?.size ?? null,
+      fileType: file?.type || '',
+      online: typeof navigator !== 'undefined' ? navigator.onLine : null,
+      capacitor: Boolean(typeof window !== 'undefined' && window?.Capacitor),
+    },
+  })
+  // #endregion
   if (!token) throw errorWithStatus('Sign in to upload photos', 401)
 
   const presignUrls = apiUrlCandidates('/api/storage-presign')
@@ -708,11 +871,67 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
       const j = await pres.json().catch(() => ({}))
       if (pres.ok && j?.uploadUrl && j?.publicUrl && j?.key) {
         json = j
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: 'C',
+          location: 'supabase.js:presign:ok',
+          message: 'presign ok',
+          data: {
+            correlationId,
+            host: (() => {
+              try {
+                return new URL(url).host
+              } catch {
+                return ''
+              }
+            })(),
+            status: pres.status,
+          },
+        })
+        // #endregion
         break
       }
       lastPresignErr = errorWithStatus(j.error || `Presign failed (${pres.status})`, pres.status)
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: 'A',
+        location: 'supabase.js:presign:http',
+        message: 'presign http error',
+        data: {
+          correlationId,
+          host: (() => {
+            try {
+              return new URL(url).host
+            } catch {
+              return ''
+            }
+          })(),
+          status: pres.status,
+          err: String(lastPresignErr.message || '').slice(0, 120),
+        },
+      })
+      // #endregion
     } catch (e) {
       lastPresignErr = e
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: 'C',
+        location: 'supabase.js:presign:fetch',
+        message: 'presign fetch threw',
+        data: {
+          correlationId,
+          host: (() => {
+            try {
+              return new URL(url).host
+            } catch {
+              return ''
+            }
+          })(),
+          errName: e?.name || '',
+          errMsg: String(e?.message || e).slice(0, 160),
+        },
+      })
+      // #endregion
     }
   }
   if (!json?.uploadUrl) {
@@ -735,6 +954,19 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
     return publicUrl
   } catch (e) {
     console.warn('meetmap: relay upload failed, trying direct PUT', e)
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'B',
+      location: 'supabase.js:relay:fallback',
+      message: 'relay failed, trying direct PUT',
+      data: {
+        correlationId,
+        errName: e?.name || '',
+        errMsg: String(e?.message || e).slice(0, 160),
+        status: e?.status ?? null,
+      },
+    })
+    // #endregion
   }
 
   try {
@@ -750,7 +982,28 @@ async function uploadImageViaR2Presign(file, body, options = {}) {
       const t = await put.text().catch(() => '')
       throw errorWithStatus(`Upload failed (${put.status}) ${t.slice(0, 120)}`, put.status)
     }
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'D',
+      location: 'supabase.js:directPut:ok',
+      message: 'direct R2 PUT ok',
+      data: { correlationId, status: put.status },
+    })
+    // #endregion
   } catch (err) {
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: 'D',
+      location: 'supabase.js:directPut:fail',
+      message: 'direct R2 PUT failed',
+      data: {
+        correlationId,
+        errName: err?.name || '',
+        errMsg: String(err?.message || err).slice(0, 160),
+        status: err?.status ?? null,
+      },
+    })
+    // #endregion
     // Fallback: server-side upload via API (try multiple hosts).
     try {
       await relayUploadToR2(file, key, token, correlationId, relayContentType)

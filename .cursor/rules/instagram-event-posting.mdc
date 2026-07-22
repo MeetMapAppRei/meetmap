@@ -1,0 +1,46 @@
+---
+description: Workflow for collecting Instagram event flyers and posting to Meetmap (no IG engagement)
+alwaysApply: true
+---
+
+# Instagram Event Posting Workflow
+
+When the user asks to **post events**, **post events from Instagram**, **run the IG feed**, **run the ig workflow**, or similar, use this workflow exactly.
+
+**Do not engage on Instagram:** no likes, follows, reposts, comments, or DMs.
+
+**Exception:** If the user wants the **national city-search** workflow (keyword search across major US cities), follow `instagram-national-meetmap-posting.mdc` instead — same no-engagement rule, but search URLs and national folder naming.
+
+## Browser setup
+
+- Open or reuse Instagram in the Cursor browser. If login, 2FA, captcha, or account verification appears, stop and ask the user to handle it manually.
+- If the user asks to refresh the feed, navigate to `https://www.instagram.com/` before scanning.
+- Collect from the public feed only. Do not use DMs, private content, or posts that require bypassing access controls.
+
+## Event eligibility
+
+Only accept events that are:
+
+- Public car, bike, truck, automotive, off-road, or motorsport events.
+- Future dated relative to today's date.
+- In the United States.
+- Clear enough for Meetmap to parse from the screenshot: event name/type, date, time when shown, and a specific location or address.
+
+Skip posts that are private/invite-only, say the address will be announced later, require DM for location, have only a recurring schedule with no specific date, are duplicates of events already collected in the current run, or do not show enough event details.
+
+## Screenshots
+
+- Save all clean flyers to **`instagram-events/car flyers to post/`** under the meetmap repo (create if missing).
+- After each browser screenshot, also copy from Cursor temp: `AppData\Local\Temp\cursor\screenshots\` → that folder.
+- Use descriptive filenames, e.g. `run5-instagram-event-city-event-slug-date-flyer.png`.
+- Prefer flyer-only element screenshots, not full-page screenshots.
+- If a crop is partial, blocked by Instagram UI, or missing key details, redo it before counting the event.
+- Count only clean screenshots that contain enough information for Meetmap to ingest accurately: **event name, specific date, and street address or venue** must be clearly readable on the flyer image (not only in caption).
+- Delete duplicates, wrong-post captures, recap/thank-you posts, non-US events, and flyers missing a visible date or address before finishing the run.
+- **Do not post to Meetmap** unless the user explicitly asks — they post flyers manually.
+
+## Run target
+
+- Unless the user gives another number, continue until there are **20 clean eligible events** screenshot-ready.
+- Keep a running count of clean events and avoid duplicates.
+- At the end, summarize the count, screenshot folder, and any known partial/bad screenshot attempts that should be ignored.

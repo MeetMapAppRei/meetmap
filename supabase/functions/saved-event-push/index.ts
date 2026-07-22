@@ -247,7 +247,15 @@ async function sendFcmV1(token: string, title: string, body: string, eventId: st
         deep_link: `${APP_DEEPLINK_BASE}${eventId}`,
         web_link: `${APP_WEB_BASE}${eventId}`,
       },
-      android: { priority: 'HIGH' },
+      android: {
+        priority: 'HIGH',
+        notification: {
+          channel_id: 'meetmap_alerts',
+          notification_priority: 'PRIORITY_HIGH',
+          default_sound: true,
+          default_vibrate_timings: true,
+        },
+      },
     },
   }
 
@@ -411,7 +419,7 @@ async function notifySavedEventUpdate(req: NotifyRequest) {
       continue
     }
     if (!response.ok) {
-      const text = String(response.payload || '')
+      const text = JSON.stringify(response.payload || {}).slice(0, 500)
       console.error('push send rejected', r.platform, response.status, text)
       failures.push({ platform: r.platform, status: response.status, detail: text })
       if (
@@ -440,6 +448,7 @@ async function notifySavedEventStatus(req: NotifyRequest) {
   const recipients = await getRecipientsForEvent(eventId)
   let sent = 0
   let skipped = 0
+  const failures: Array<{ platform: string; status: number; detail: string }> = []
 
   for (const r of recipients) {
     if (!r.prefs.event_updates_enabled) {
@@ -464,17 +473,21 @@ async function notifySavedEventStatus(req: NotifyRequest) {
         eventId,
       )
     } catch (error) {
-      console.error('push send failed', r.platform, String(error))
+      const detail = String(error)
+      console.error('push send failed', r.platform, detail)
+      failures.push({ platform: r.platform, status: 0, detail })
       continue
     }
     if (!response.ok) {
+      const text = JSON.stringify(response.payload || {}).slice(0, 400)
       console.error('push send rejected', r.platform, response.status, response.payload)
+      failures.push({ platform: r.platform, status: response.status, detail: text })
       continue
     }
     await markSent(r.userId, eventId, 'event_status', dedupeKey)
     sent += 1
   }
-  return { sent, skipped }
+  return { sent, skipped, failures }
 }
 
 async function runReminderTick(req: NotifyRequest) {

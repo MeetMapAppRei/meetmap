@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core'
 import { PushNotifications } from '@capacitor/push-notifications'
 
 const PUSH_STEP_TIMEOUT_MS = 25000
+export const MEETMAP_PUSH_CHANNEL_ID = 'meetmap_alerts'
 
 const readWindowCapacitor = () => {
   try {
@@ -63,6 +64,28 @@ function withTimeout(promise, ms, message) {
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
   ])
+}
+
+async function ensureAndroidPushChannel() {
+  if (nativePushPlatform() !== 'android') return
+  try {
+    // Recreate so a prior bad sound URI (res/raw/default) does not stick forever.
+    try {
+      await PushNotifications.deleteChannel({ id: MEETMAP_PUSH_CHANNEL_ID })
+    } catch {}
+    // Do not set sound: 'default' — Capacitor treats that as res/raw/default, which
+    // does not exist and breaks notification audio (FileNotFoundException in logcat).
+    await PushNotifications.createChannel({
+      id: MEETMAP_PUSH_CHANNEL_ID,
+      name: 'Meet Map Alerts',
+      description: 'Reminders and updates for saved events',
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+    })
+  } catch (e) {
+    console.warn('Failed to create Android push channel:', e)
+  }
 }
 
 /** Native push works on Android and iOS Capacitor shells. */
@@ -142,10 +165,108 @@ export const addNativePushTapListener = (onNotificationTap) => {
   }
 }
 
+/**
+ * When the app is open, Android does not show a system tray notification for FCM
+ * `notification` payloads. Callers can surface an in-app alert from this listener.
+ */
+export const addNativePushReceivedListener = (onNotificationReceived) => {
+  if (!isNativePushSupported()) return null
+  try {
+    return PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      if (typeof onNotificationReceived === 'function') {
+        try {
+          onNotificationReceived(notification)
+        } catch (e) {
+          console.warn('Native push received handler failed:', e)
+        }
+      }
+    })
+  } catch (e) {
+    console.warn('Failed to add native push received listener:', e)
+    return null
+  }
+}
+
+/**
+ * Re-register for a fresh FCM/APNs token when OS permission is already granted.
+ * Does not prompt. Needed because localStorage can keep an UNREGISTERED token
+ * that FCM rejects with 404 NotRegistered.
+ */
+export const refreshNativePushRegistration = async ({
+  onToken,
+  onRegistrationError,
+  onNotificationTap,
+  onNotificationReceived,
+} = {}) => {
+  const platform = nativePushPlatform()
+  if (!platform) {
+    return { enabled: false, reason: 'not-native' }
+  }
+
+  try {
+    await PushNotifications.removeAllListeners()
+  } catch {}
+
+  let resolveRegistration
+  let rejectRegistration
+  const registrationResult = new Promise((resolve, reject) => {
+    resolveRegistration = resolve
+    rejectRegistration = reject
+  })
+
+  PushNotifications.addListener('registration', (token) => {
+    const tokenValue = token?.value || ''
+    if (typeof onToken === 'function') onToken(tokenValue)
+    resolveRegistration(tokenValue)
+  })
+
+  PushNotifications.addListener('registrationError', (err) => {
+    if (typeof onRegistrationError === 'function') onRegistrationError(err)
+    rejectRegistration(err instanceof Error ? err : new Error(String(err)))
+  })
+
+  if (typeof onNotificationTap === 'function') {
+    PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      onNotificationTap(action)
+    })
+  }
+
+  if (typeof onNotificationReceived === 'function') {
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      onNotificationReceived(notification)
+    })
+  }
+
+  try {
+    const permission = await PushNotifications.checkPermissions()
+    const receive = permission?.receive || 'denied'
+    if (receive !== 'granted') {
+      return { enabled: false, reason: 'permission-denied' }
+    }
+
+    await ensureAndroidPushChannel()
+    await PushNotifications.register()
+    const token = await withTimeout(
+      registrationResult,
+      PUSH_STEP_TIMEOUT_MS,
+      'Timed out refreshing push token.',
+    )
+    return { enabled: true, token, platform }
+  } catch (e) {
+    if (typeof onRegistrationError === 'function') onRegistrationError(e)
+    const msg = e?.message || String(e)
+    if (/timed out/i.test(msg)) {
+      return { enabled: false, reason: 'timed-out', message: msg }
+    }
+    return { enabled: false, reason: 'register-failed', message: msg }
+  }
+}
+
 export const initializeNativePush = async ({
   onToken,
   onRegistrationError,
   onNotificationTap,
+  onNotificationReceived,
 } = {}) => {
   const platform = nativePushPlatform()
   if (!platform) {
@@ -178,6 +299,12 @@ export const initializeNativePush = async ({
     if (typeof onNotificationTap === 'function') onNotificationTap(action)
   })
 
+  if (typeof onNotificationReceived === 'function') {
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      onNotificationReceived(notification)
+    })
+  }
+
   let request
   try {
     request = await withTimeout(
@@ -204,6 +331,7 @@ export const initializeNativePush = async ({
       : 'Timed out waiting for push token (check Google Play services / Firebase on this device).'
 
   try {
+    await ensureAndroidPushChannel()
     await PushNotifications.register()
     const token = await withTimeout(
       registrationResult,

@@ -8,7 +8,7 @@ import {
 } from '../lib/supabase'
 import { useAuth } from '../lib/useAuth'
 import { useTheme } from '../lib/useTheme'
-import { apiUrl } from '../lib/apiOrigin'
+import { apiUrl, apiUrlCandidates } from '../lib/apiOrigin'
 import { geocodeAddress, humanizeFetchError } from '../lib/geocode'
 import { buildEventLocationQuery, buildGeocodeQuery } from '../lib/eventLocation'
 import { userMessageForPostSubmitError } from '../lib/postErrorMessages'
@@ -25,6 +25,7 @@ import { makeClientUuid } from '../lib/clientUuid'
 import { savePostPrefill, loadAndConsumePostPrefill, clearPostPrefill } from '../lib/postPrefill'
 
 function isTransientNetworkError(e) {
+  const name = String(e?.name || '')
   const m = String(
     e?.message ||
       e?.error_description ||
@@ -37,8 +38,13 @@ function isTransientNetworkError(e) {
       e ||
       '',
   )
+  // Android WebView FileReader often rejects with a ProgressEvent ([object ProgressEvent]).
+  // That used to skip retries and surface as a one-shot "connection" error on first post.
+  if (/progress/i.test(name) || /\[object ProgressEvent\]/i.test(m) || /typeerror/i.test(name)) {
+    return true
+  }
   // Supabase / fetch / WebView often surface as TypeError, empty body, or gateway errors.
-  return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504|econnreset|etimedout|socket|connection refused|eai_again|enotfound|econnrefused|tls|gateway/i.test(
+  return /failed to fetch|networkerror|load failed|network request failed|timeout|abort|502|503|504|econnreset|etimedout|socket|connection refused|eai_again|enotfound|econnrefused|tls|gateway|read image|progress/i.test(
     m,
   )
 }
@@ -289,7 +295,6 @@ async function extractFlyerInfoOnce(
   }
   const candidates = [
     apiUrl('/api/extract-flyer'),
-    'https://findcarmeets.com/api/extract-flyer',
     'https://www.findcarmeets.com/api/extract-flyer',
     'https://meetmap-gilt.vercel.app/api/extract-flyer',
   ]
@@ -442,15 +447,21 @@ async function reportClientLogEvent(event, payload) {
       appVersion:
         typeof import.meta !== 'undefined' ? String(import.meta.env?.VITE_APP_VERSION || '') : '',
     }
-    const endpoint = apiUrl('/api/client-log')
-    await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      keepalive: true,
-      cache: 'no-store',
-      credentials: 'omit',
-    }).catch(() => {})
+    // Try multiple hosts — Android targets findcarmeets.com; gilt is the fall-back when a route is missing.
+    const urls = apiUrlCandidates('/api/client-log')
+    const json = JSON.stringify(body)
+    await Promise.all(
+      urls.slice(0, 3).map((endpoint) =>
+        fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: json,
+          keepalive: true,
+          cache: 'no-store',
+          credentials: 'omit',
+        }).catch(() => {}),
+      ),
+    )
   } catch {}
 }
 
@@ -521,12 +532,13 @@ export default function PostEventForm({ onClose, onPosted }) {
     setPrefillBanner(true)
   }, [])
 
-  // Warm serverless routes (reduces first-request cold-start failures on mobile web).
+  // Warm serverless routes (reduces first-request cold-start failures on mobile / Capacitor).
   useEffect(() => {
     const urls = Array.from(
       new Set(
         [
           apiUrl('/api/storage-health'),
+          'https://www.findcarmeets.com/api/storage-health',
           'https://meetmap-gilt.vercel.app/api/storage-health',
         ].filter(Boolean),
       ),
@@ -713,6 +725,43 @@ export default function PostEventForm({ onClose, onPosted }) {
         location: info.location || '',
         city: info.city || '',
       })
+      // #region agent log
+      {
+        const payload = {
+          sessionId: '34c561',
+          runId: 'pre-fix',
+          hypothesisId: 'A',
+          location: 'PostEventForm.jsx:handleFlyerUpload',
+          message: 'flyer_extract_result',
+          data: {
+            capacitor: isCapacitorNative(),
+            platform: detectClientPlatform(),
+            extractMode: user?.id ? 'url_or_fallback' : 'base64',
+            title: String(info.title || '').slice(0, 80),
+            address: String(info.address || '').slice(0, 120),
+            verified_address: String(info.verified_address || '').slice(0, 120),
+            bestAddress: String(bestAddress || '').slice(0, 120),
+            city: String(info.city || '').slice(0, 80),
+            location: String(info.location || '').slice(0, 80),
+            geocodeQuery: String(geocodeQuery || '').slice(0, 160),
+            hasCity: Boolean(String(info.city || '').trim()),
+          },
+          timestamp: Date.now(),
+        }
+        fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '34c561' },
+          body: JSON.stringify(payload),
+        }).catch(() => {})
+        void reportClientLogEvent('debug_flyer_extract', {
+          stage: 'flyer_extract_result',
+          hypothesisId: 'A',
+          message: 'flyer_extract_result',
+          details: JSON.stringify(payload.data).slice(0, 800),
+          correlationId: flyerCorrelationId,
+        })
+      }
+      // #endregion
       const allDates = normalizeFlyerDates(info)
       const primaryDate = allDates[0] || info.date || ''
       if (allDates.length > 1) setFlyerDates(allDates)
@@ -734,6 +783,38 @@ export default function PostEventForm({ onClose, onPosted }) {
       if (bestAddress) {
         try {
           const result = await geocodeAddress(geocodeQuery)
+          // #region agent log
+          {
+            const payload = {
+              sessionId: '34c561',
+              runId: 'pre-fix',
+              hypothesisId: 'D',
+              location: 'PostEventForm.jsx:handleFlyerUpload',
+              message: 'flyer_autogeocode_result',
+              data: {
+                capacitor: isCapacitorNative(),
+                geocodeQuery: String(geocodeQuery || '').slice(0, 160),
+                found: Boolean(result),
+                lat: result?.lat ?? null,
+                lng: result?.lng ?? null,
+                status: result ? 'found' : 'notfound',
+              },
+              timestamp: Date.now(),
+            }
+            fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '34c561' },
+              body: JSON.stringify(payload),
+            }).catch(() => {})
+            void reportClientLogEvent('debug_flyer_geocode', {
+              stage: 'flyer_autogeocode_result',
+              hypothesisId: 'D',
+              message: result ? 'found' : 'notfound',
+              details: JSON.stringify(payload.data).slice(0, 800),
+              correlationId: flyerCorrelationId,
+            })
+          }
+          // #endregion
           if (result) {
             setCoords(result)
             setAddressStatus('found')
@@ -741,6 +822,14 @@ export default function PostEventForm({ onClose, onPosted }) {
             setAddressStatus('notfound')
           }
         } catch {
+          // #region agent log
+          void reportClientLogEvent('debug_flyer_geocode', {
+            stage: 'flyer_autogeocode_error',
+            hypothesisId: 'B',
+            message: 'error',
+            correlationId: flyerCorrelationId,
+          })
+          // #endregion
           setAddressStatus('error')
         }
       }
@@ -869,6 +958,32 @@ export default function PostEventForm({ onClose, onPosted }) {
       onClose()
     } catch (e) {
       console.error('PostEventForm submit failed', { stage, correlationId, err: e })
+      // #region agent log
+      fetch('http://127.0.0.1:7310/ingest/922490f1-8ac5-411c-9457-0cd61c4e0489', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a372f1' },
+        body: JSON.stringify({
+          sessionId: 'a372f1',
+          runId: 'pre-fix',
+          hypothesisId: 'A-E',
+          location: 'PostEventForm.jsx:submit:catch',
+          message: 'post submit failed',
+          data: {
+            stage,
+            correlationId,
+            errName: e?.name || '',
+            errMsg: String(e?.message || e).slice(0, 220),
+            status: e?.status ?? e?.statusCode ?? null,
+            transient: isTransientNetworkError(e),
+            photoSize: photo?.size ?? null,
+            photoType: photo?.type || '',
+            online: typeof navigator !== 'undefined' ? navigator.onLine : null,
+            capacitor: isCapacitorNative(),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       const dbMissing = inferMissingFieldsFromDbError(e)
       const isConn = isTransientNetworkError(e)
       const baseMessage = userMessageForPostSubmitError(stage, e, correlationId)
@@ -894,8 +1009,18 @@ export default function PostEventForm({ onClose, onPosted }) {
         correlationId,
         message: String(e?.message || ''),
         code: String(e?.code || ''),
-        details: String(e?.details || e?.hint || ''),
+        details: JSON.stringify({
+          hint: String(e?.details || e?.hint || ''),
+          status: e?.status ?? e?.statusCode ?? null,
+          name: e?.name || '',
+          transient: isConn,
+          photoSize: photo?.size ?? null,
+          photoType: photo?.type || '',
+          capacitor: isCapacitorNative(),
+        }).slice(0, 700),
         hasPhoto: !!photo,
+        hypothesisId: 'A-E',
+        location: 'PostEventForm.jsx:submit:catch',
       })
 
       // If this submit hit a connection error after the event was created,
