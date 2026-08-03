@@ -309,7 +309,7 @@ function AppInner() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [loadErrorMessage, setLoadErrorMessage] = useState('')
-  const [view, setView] = useState('list')
+  const [view, setView] = useState('map')
 
   // Support SEO-friendly city landing pages: /car-meets-in-<slug>/
   useEffect(() => {
