@@ -1,7 +1,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-type NotifyMode = 'event_update' | 'event_status' | 'reminder_tick'
+type NotifyMode = 'event_update' | 'event_status' | 'reminder_tick' | 'device_ping'
 
 type NotifyRequest = {
   mode: NotifyMode
@@ -10,7 +10,10 @@ type NotifyRequest = {
   statusLabel?: string
   reminderWindowId?: string
   nowIso?: string
+  userId?: string
 }
+
+type PushSendResult = { ok: boolean; status: number; payload: unknown }
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -271,6 +274,46 @@ async function sendFcmV1(token: string, title: string, body: string, eventId: st
   return { ok: res.ok, status: res.status, payload }
 }
 
+function isUnregisteredPush(status: number, payload: unknown) {
+  const text = JSON.stringify(payload || '')
+  return (
+    status === 400 ||
+    status === 404 ||
+    status === 410 ||
+    /InvalidRegistration|NotRegistered|BadDeviceToken|Unregistered/i.test(text)
+  )
+}
+
+async function recordPushAttempt(token: string, response: PushSendResult) {
+  const text = JSON.stringify(response.payload || {}).slice(0, 400)
+  const now = new Date().toISOString()
+  const patch: Record<string, unknown> = {
+    last_attempt_at: now,
+    last_error: response.ok ? null : text.slice(0, 300),
+  }
+  if (!response.ok && isUnregisteredPush(response.status, response.payload)) {
+    patch.active = false
+    patch.invalidated_at = now
+  }
+  await supabase.from('device_push_tokens').update(patch).eq('token', token)
+}
+
+function isServiceRoleRequest(request: Request) {
+  const auth = request.headers.get('Authorization') || ''
+  const token = auth.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return false
+  if (token === SUPABASE_SERVICE_ROLE_KEY) return true
+  if (INTERNAL_BEARER && token === INTERNAL_BEARER) return true
+  try {
+    const payloadPart = token.split('.')[1]
+    if (!payloadPart) return false
+    const json = JSON.parse(atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/')))
+    return json?.role === 'service_role'
+  } catch {
+    return false
+  }
+}
+
 type EventMeta = { title: string; date: string; time: string }
 
 async function getEventMeta(eventId: string): Promise<EventMeta | null> {
@@ -418,18 +461,11 @@ async function notifySavedEventUpdate(req: NotifyRequest) {
       failures.push({ platform: r.platform, status: 0, detail })
       continue
     }
+    await recordPushAttempt(r.token, response)
     if (!response.ok) {
       const text = JSON.stringify(response.payload || {}).slice(0, 500)
       console.error('push send rejected', r.platform, response.status, text)
       failures.push({ platform: r.platform, status: response.status, detail: text })
-      if (
-        response.status === 400 ||
-        response.status === 404 ||
-        response.status === 410 ||
-        /InvalidRegistration|NotRegistered|BadDeviceToken|Unregistered|BadDeviceToken/i.test(text)
-      ) {
-        await supabase.from('device_push_tokens').update({ active: false }).eq('token', r.token)
-      }
       continue
     }
     await markSent(r.userId, eventId, 'event_update', dedupeKey)
@@ -478,6 +514,7 @@ async function notifySavedEventStatus(req: NotifyRequest) {
       failures.push({ platform: r.platform, status: 0, detail })
       continue
     }
+    await recordPushAttempt(r.token, response)
     if (!response.ok) {
       const text = JSON.stringify(response.payload || {}).slice(0, 400)
       console.error('push send rejected', r.platform, response.status, response.payload)
@@ -570,13 +607,58 @@ async function runReminderTick(req: NotifyRequest) {
           console.error('push send failed', r.platform, String(error))
           continue
         }
-        if (!response.ok) continue
+        await recordPushAttempt(r.token, response)
+        if (!response.ok) {
+          console.error(
+            'push send rejected',
+            r.platform,
+            response.status,
+            JSON.stringify(response.payload || {}).slice(0, 400),
+          )
+          continue
+        }
         await markSent(r.userId, event.id, 'reminder', dedupeKey)
         sent += 1
       }
     }
   }
   return { sent, skipped }
+}
+
+async function pingUserDevices(userId: string) {
+  const { data: tokens, error } = await supabase
+    .from('device_push_tokens')
+    .select('token, platform')
+    .eq('user_id', userId)
+    .eq('active', true)
+  if (error) throw error
+  const results: Array<{ platform: string; ok: boolean; status: number; detail: string }> = []
+  for (const row of tokens || []) {
+    const platform = (row.platform as string) || 'android'
+    const token = String(row.token || '')
+    if (!token) continue
+    let response: PushSendResult
+    try {
+      response = await sendPush(
+        platform,
+        token,
+        'Meet Map alerts test',
+        'If you see this, Android/iOS alerts are working again.',
+        '',
+      )
+    } catch (error) {
+      results.push({ platform, ok: false, status: 0, detail: String(error) })
+      continue
+    }
+    await recordPushAttempt(token, response)
+    results.push({
+      platform,
+      ok: response.ok,
+      status: response.status,
+      detail: JSON.stringify(response.payload || {}).slice(0, 200),
+    })
+  }
+  return { sent: results.filter((r) => r.ok).length, attempted: results.length, results }
 }
 
 Deno.serve(async (request) => {
@@ -588,7 +670,12 @@ Deno.serve(async (request) => {
   if (!FCM_PRIVATE_KEY) return json(500, { error: 'Missing FCM_PRIVATE_KEY' })
   if (INTERNAL_BEARER) {
     const auth = request.headers.get('Authorization') || ''
-    if (auth !== `Bearer ${INTERNAL_BEARER}`) return json(401, { error: 'Unauthorized' })
+    const token = auth.replace(/^Bearer\s+/i, '').trim()
+    const allowed =
+      token === INTERNAL_BEARER ||
+      token === SUPABASE_SERVICE_ROLE_KEY ||
+      isServiceRoleRequest(request)
+    if (!allowed) return json(401, { error: 'Unauthorized' })
   }
 
   try {
@@ -606,6 +693,13 @@ Deno.serve(async (request) => {
     }
     if (mode === 'reminder_tick') {
       const result = await runReminderTick(body)
+      return json(200, { ok: true, mode, ...result })
+    }
+    if (mode === 'device_ping') {
+      if (!isServiceRoleRequest(request)) return json(401, { error: 'Unauthorized' })
+      const userId = norm(body.userId)
+      if (!userId) return json(400, { error: 'Missing userId' })
+      const result = await pingUserDevices(userId)
       return json(200, { ok: true, mode, ...result })
     }
     return json(400, { error: 'Invalid mode' })

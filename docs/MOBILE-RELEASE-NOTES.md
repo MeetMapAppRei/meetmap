@@ -1,5 +1,26 @@
 # Mobile release notes
 
+## 1.1.0 (Android versionCode 45) — Android alerts stay registered
+
+**Google Play "What's new" (paste):**
+
+```
+• Fixed Android alerts stopping after a while (stale push token)
+• Saved-event reminders and updates deliver more reliably
+• Bug fixes and stability improvements
+```
+
+### What to test (Android versionCode 45)
+
+1. **Cold start with Alerts already on** — Force-stop Meet Map, reopen it, and confirm Alerts still shows as enabled.
+2. **Test alert** — Keep a saved upcoming event; you should still get reminders/updates without turning Alerts off and on again.
+3. **Permission** — Android Settings → Apps → Meet Map → Notifications stays allowed.
+4. **Regression** — Map, Near Me, and opening an event from a notification still work.
+
+No new iOS App Store build is required for this fix. iOS delivery was already working; the server-side token invalidation applies to both platforms. The Android-only channel and FCM rotate changes ship in this Play build.
+
+---
+
 ## 1.1.0 (Android versionCode 44) — Capacitor 8 / API 36
 
 **Google Play "What's new" (paste):**

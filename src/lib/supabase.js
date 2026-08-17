@@ -1273,7 +1273,7 @@ export const upsertDevicePushToken = async ({ userId, token, platform = 'android
       ],
       { onConflict: 'token' },
     )
-    .select('id, user_id, token, platform, active, updated_at')
+    .select('id, user_id, token, platform, active, invalidated_at, last_error, updated_at')
     .single()
   if (error) throw error
   return data

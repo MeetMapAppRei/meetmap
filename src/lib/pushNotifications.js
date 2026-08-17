@@ -66,13 +66,31 @@ function withTimeout(promise, ms, message) {
   ])
 }
 
+const ANDROID_CHANNEL_FIX_KEY = 'meetmap_push_channel_v2'
+
 async function ensureAndroidPushChannel() {
   if (nativePushPlatform() !== 'android') return
   try {
-    // Recreate so a prior bad sound URI (res/raw/default) does not stick forever.
+    // One-time rebuild for installs that still have the broken res/raw/default sound.
+    // Do not delete the channel on every launch — some OEMs then suppress the new channel.
+    let rebuilt = false
     try {
-      await PushNotifications.deleteChannel({ id: MEETMAP_PUSH_CHANNEL_ID })
+      rebuilt = window.localStorage.getItem(ANDROID_CHANNEL_FIX_KEY) === '1'
     } catch {}
+    if (!rebuilt) {
+      try {
+        await PushNotifications.deleteChannel({ id: MEETMAP_PUSH_CHANNEL_ID })
+      } catch {}
+      try {
+        window.localStorage.setItem(ANDROID_CHANNEL_FIX_KEY, '1')
+      } catch {}
+    }
+    let exists = false
+    try {
+      const listed = await PushNotifications.listChannels()
+      exists = (listed?.channels || []).some((channel) => channel?.id === MEETMAP_PUSH_CHANNEL_ID)
+    } catch {}
+    if (exists) return
     // Do not set sound: 'default' — Capacitor treats that as res/raw/default, which
     // does not exist and breaks notification audio (FileNotFoundException in logcat).
     await PushNotifications.createChannel({
@@ -347,4 +365,19 @@ export const initializeNativePush = async ({
     }
     return { enabled: false, reason: 'register-failed' }
   }
+}
+
+/**
+ * Delete the current FCM/APNs token and register again.
+ * Capacitor's unregister() does not wait for FCM deleteToken(), so we pause first.
+ */
+export const rotateNativePushRegistration = async (opts = {}) => {
+  if (!nativePushPlatform()) {
+    return { enabled: false, reason: 'not-native' }
+  }
+  try {
+    await PushNotifications.unregister()
+  } catch {}
+  await new Promise((resolve) => setTimeout(resolve, 2000))
+  return refreshNativePushRegistration(opts)
 }

@@ -35,6 +35,7 @@ import {
   requestWebNotificationPermission,
   initializeNativePush,
   refreshNativePushRegistration,
+  rotateNativePushRegistration,
   isNativePushSupported,
   getNativePushPlatform,
   getNativePushPermission,
@@ -372,7 +373,9 @@ function AppInner() {
   const [notificationPermission, setNotificationPermission] = useState(
     getWebNotificationPermission(),
   )
-  const [pushToken, setPushToken] = useState(getStoredNativePushToken)
+  const [pushToken, setPushToken] = useState('')
+  const [pushRegistrationChecked, setPushRegistrationChecked] = useState(false)
+  const pushRotateAttemptedRef = useRef(false)
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
   const [showAppSettings, setShowAppSettings] = useState(false)
   const [notificationPrefs, setNotificationPrefs] = useState(() => ({
@@ -720,10 +723,12 @@ function AppInner() {
     const nativeSupported = isNativePushSupported()
     if (!nativeSupported) {
       setNotificationPermission(getWebNotificationPermission())
+      setPushRegistrationChecked(true)
       return
     }
     if (!NATIVE_PUSH_ENABLED) {
       setNotificationPermission('denied')
+      setPushRegistrationChecked(true)
       return
     }
 
@@ -735,7 +740,10 @@ function AppInner() {
         if (!mounted) return
         const granted = perm === 'granted'
         setNotificationPermission(granted ? 'granted' : 'denied')
-        if (!granted) return
+        if (!granted) {
+          setPushRegistrationChecked(true)
+          return
+        }
         const result = await refreshNativePushRegistration({
           onToken: (token) => {
             if (token && mounted) setPushToken(token)
@@ -757,10 +765,12 @@ function AppInner() {
           }
           setPushToken(result.token)
         }
+        setPushRegistrationChecked(true)
       })
       .catch(() => {
         if (!mounted) return
         setNotificationPermission('denied')
+        setPushRegistrationChecked(true)
       })
 
     return () => {
@@ -778,15 +788,47 @@ function AppInner() {
 
   useEffect(() => {
     if (!user?.id) return
+    if (!pushRegistrationChecked) return
     if (!pushToken) return
+    let cancelled = false
     upsertDevicePushToken({
       userId: user.id,
       token: pushToken,
       platform: getNativePushPlatform() || 'android',
-    }).catch((error) => {
-      console.error('Failed to save push token:', error)
     })
-  }, [user, pushToken])
+      .then(async (row) => {
+        if (cancelled || !row || row.active !== false) return
+        if (pushRotateAttemptedRef.current) return
+        pushRotateAttemptedRef.current = true
+        const rotated = await rotateNativePushRegistration({
+          onToken: (token) => {
+            if (token) setPushToken(token)
+          },
+          onNotificationTap: (action) => {
+            void openNotificationLink(action, (id) => openEventByIdRef.current?.(id))
+          },
+          onNotificationReceived: (notification) => {
+            const title = String(notification?.title || 'Meet Map').trim()
+            const body = String(notification?.body || 'New alert for a saved event.').trim()
+            void appAlert(`${title}\n\n${body}`)
+          },
+        })
+        if (cancelled) return
+        if (rotated?.token && rotated.token !== pushToken) {
+          const previous = getStoredNativePushToken()
+          if (previous && previous !== rotated.token) {
+            setDevicePushTokenActive(previous, false).catch(() => {})
+          }
+          setPushToken(rotated.token)
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to save push token:', error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user, pushToken, pushRegistrationChecked])
 
   useEffect(() => {
     if (!user?.id) {
@@ -860,6 +902,7 @@ function AppInner() {
         return
       }
       try {
+        pushRotateAttemptedRef.current = false
         const result = await initializeNativePush({
           onToken: async (token) => {
             if (token) setPushToken(token)
@@ -882,6 +925,7 @@ function AppInner() {
           },
         })
         setNotificationPermission(result?.enabled ? 'granted' : 'denied')
+        setPushRegistrationChecked(true)
         if (result?.token) {
           const previous = getStoredNativePushToken()
           if (previous && previous !== result.token) {
