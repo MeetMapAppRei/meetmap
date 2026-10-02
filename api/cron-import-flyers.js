@@ -45,6 +45,29 @@ const norm = (value) =>
 
 const lowerNorm = (value) => norm(value).toLowerCase()
 
+function normPlace(value) {
+  return lowerNorm(value)
+    .replace(/\b(united states|u\.s\.a\.?|usa)\b/g, ' ')
+    .replace(/[.,#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function samePlaceText(left, right) {
+  const a = normPlace(left)
+  const b = normPlace(right)
+  return a.length >= 8 && a === b
+}
+
+function sameAddressOrVenue(a, b) {
+  return (
+    samePlaceText(a.address, b.address) ||
+    samePlaceText(a.location, b.location) ||
+    samePlaceText(a.address, b.location) ||
+    samePlaceText(a.location, b.address)
+  )
+}
+
 const safeInt = (value, fallback) => {
   const n = Number.parseInt(String(value ?? ''), 10)
   return Number.isFinite(n) ? n : fallback
@@ -516,7 +539,10 @@ async function duplicateExists(supabase, event, geocode) {
   if (error) throw error
   const targetTitle = lowerNorm(event.title)
   const targetAddress = lowerNorm(event.address)
+  const geocoded = geocode?.address ? { ...event, address: geocode.address } : null
   for (const row of data || []) {
+    if (sameAddressOrVenue(event, row) || (geocoded && sameAddressOrVenue(geocoded, row)))
+      return row
     if (lowerNorm(row.title) === targetTitle) {
       const sameCity = lowerNorm(row.city) === lowerNorm(event.city)
       const sameAddress = targetAddress && lowerNorm(row.address) === targetAddress

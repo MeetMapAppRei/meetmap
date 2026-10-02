@@ -24,7 +24,11 @@
     "sync:pull": "node scripts/sync-repos.mjs pull",
     "sync:push": "node scripts/sync-repos.mjs push",
     "sync:status": "node scripts/sync-repos.mjs status",
-    "sync:hooks": "node scripts/install-git-hooks.mjs"
+    "sync:hooks": "node scripts/install-git-hooks.mjs",
+    "collect:socal": "python scripts/collect-socal-car-culture.py",
+    "collect:csn": "python scripts/collect-carshownationals.py",
+    "collect:csn:central": "python scripts/collect-carshownationals.py --region central",
+    "collect:calendars": "python scripts/collect-socal-car-culture.py && python scripts/collect-carshownationals.py"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.750.0",

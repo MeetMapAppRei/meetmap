@@ -37,7 +37,7 @@ const normalizeStatus = (value) => {
   return ['active', 'moved', 'delayed', 'canceled'].includes(v) ? v : 'active'
 }
 
-const DUPLICATE_EVENT_MESSAGE = 'An event with the same title, date, and city already exists.'
+const DUPLICATE_EVENT_MESSAGE = 'An event at the same place on this date already exists.'
 
 /** PostgREST `.or()` splits on commas; quote values so searches like "New Britain, CT" work. */
 const postgrestQuotedOrValue = (value) =>

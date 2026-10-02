@@ -1,5 +1,5 @@
 ---
-description: Mirror Documents dev projects to D:\Backups when D: is available
+description: Mirror Documents/Projects trees to E:\Backups when the Toshiba external disk is available
 alwaysApply: true
 ---
 
@@ -7,29 +7,32 @@ alwaysApply: true
 
 ## When to back up
 
-If **`D:\`** exists, is writable, and looks like the user’s external disk (volume label **External** when queryable), treat backups as expected—not optional—for **meaningful work** (multi-file edits, refactors, dependency or native project changes, or anything the user could not trivially redo). After such work, **run an incremental backup** without being asked, unless the user declined backups for this session.
+If **`E:\`** exists, is writable, and looks like the user’s external disk (volume label **TOSHIBA EXT** when queryable), treat backups as expected—not optional—for **meaningful work** (multi-file edits, refactors, dependency or native project changes, or anything the user could not trivially redo). After such work, **run an incremental backup** without being asked, unless the user declined backups for this session.
 
-If **`D:\`** is missing or not writable, say the external drive does not appear connected and **do not** fail the task; skip backup.
+If **`E:\`** is missing or not writable, say the external drive does not appear connected and **do not** fail the task; skip backup.
+
+Meet Map’s Cursor workspace may be `C:\Users\areil\Projects\meetmap`; back up **that tree** when it is where the edits happened. Also copy `Documents\meetmap` when that clone was changed.
 
 ## Canonical sources → destinations
 
-| Project | Source (edit here) | Backup folder on `D:\` |
+| Project | Source (edit here) | Backup folder on `E:\` |
 |---------|-------------------|-------------------------|
-| Meet Map | `C:\Users\areil\Documents\meetmap` | `D:\Backups\meetmap` |
-| Yard sale map | `C:\Users\areil\Documents\yard-sale-map` | `D:\Backups\yard-sale-map` |
-| Meet Map Desktop (whole tree) | `C:\Users\areil\Documents\meetmap-desktop` | `D:\Backups\meetmap-desktop` |
-| Debate Arena | `C:\Users\areil\Documents\debate-arena` | `D:\Backups\debate-arena` |
-| Debate Arena v2 | `C:\Users\areil\Documents\debate-arena-v2` | `D:\Backups\debate-arena-v2` |
-| Car Meet App | `C:\Users\areil\Documents\Car Meet App` | `D:\Backups\Car Meet App` |
-| findcarmeets stickers | `C:\Users\areil\Documents\findcarmeets-stickers` | `D:\Backups\findcarmeets-stickers` |
-| Zips / exports | `C:\Users\areil\Documents\project-archives` | `D:\Backups\project-archives` |
+| Meet Map (Documents clone) | `C:\Users\areil\Documents\meetmap` | `E:\Backups\meetmap` |
+| Meet Map (Projects workspace) | `C:\Users\areil\Projects\meetmap` | `E:\Backups\meetmap` |
+| Yard sale map | `C:\Users\areil\Documents\yard-sale-map` | `E:\Backups\yard-sale-map` |
+| Meet Map Desktop (whole tree) | `C:\Users\areil\Documents\meetmap-desktop` | `E:\Backups\meetmap-desktop` |
+| Debate Arena | `C:\Users\areil\Documents\debate-arena` | `E:\Backups\debate-arena` |
+| Debate Arena v2 | `C:\Users\areil\Documents\debate-arena-v2` | `E:\Backups\debate-arena-v2` |
+| Car Meet App | `C:\Users\areil\Documents\Car Meet App` | `E:\Backups\Car Meet App` |
+| findcarmeets stickers | `C:\Users\areil\Documents\findcarmeets-stickers` | `E:\Backups\findcarmeets-stickers` |
+| Zips / exports | `C:\Users\areil\Documents\project-archives` | `E:\Backups\project-archives` |
 
 ## Command (PowerShell)
 
 Use **robocopy** (handles large trees; exit codes **0–7** are success):
 
 ```powershell
-robocopy "C:\Users\areil\Documents\meetmap" "D:\Backups\meetmap" /E /COPY:DAT /R:2 /W:3 /MT:8 /NFL /NDL /NJH /NJS
+robocopy "C:\Users\areil\Projects\meetmap" "E:\Backups\meetmap" /E /COPY:DAT /R:2 /W:3 /MT:8 /NFL /NDL /NJH /NJS
 ```
 
 Repeat with the other source/destination pairs when those trees were changed. Prefer **incremental** runs (same flags); do not delete backup roots unless the user explicitly asks. Paths with spaces (e.g. **Car Meet App**) must stay quoted in PowerShell.

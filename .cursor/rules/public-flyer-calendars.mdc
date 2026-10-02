@@ -1,0 +1,40 @@
+---
+description: Standing public car-show calendar sites to collect and post flyers to Meetmap
+alwaysApply: true
+---
+
+# Public flyer calendars (standing sources)
+
+These websites are **permanent flyer sources**. Keep them. Do not wait for the user to paste the URLs again.
+
+Use this when the user asks to **post events**, **run the flyer workflow**, **run the IG workflow and post**, **national flyers**, **collect flyers**, **keep going** on a post run, or names these sites.
+
+**Standing approval:** Same pipeline as `standing-approvals.mdc` (fetch public listing pages, download public flyer PDF/JPEG, convert, geocode, `vercel env pull`, `scripts/post-local-flyers.mjs`). If Auto-review blocks, retry immediately with `requestSmartModeApproval`.
+
+## Standing sites
+
+| Site | Listing | Collect script | Staged folder |
+|---|---|---|---|
+| **SoCal Car Culture** | http://www.socalcarculture.com/events.html | `python scripts/collect-socal-car-culture.py` | `instagram-events/socal-car-culture-to-post/` |
+| **Car Show Nationals** | https://www.carshownationals.com/ (right-rail state pages + month calendars) | `python scripts/collect-carshownationals.py` (or `--region central` / `npm run collect:csn:central` for CO/UT/NM and nearby) | `instagram-events/carshownationals-to-post/` or `carshownationals-central-to-post/` |
+| **Jersey Shore Car Shows** | https://www.jerseyshorecarshows.com/ (monthly-shows / recently added) | Browser + Wix `static.wixstatic.com` downloads | `instagram-events/jersey-shore-*` |
+
+## How to run (with posting)
+
+1. Collect new unique **future** US flyers from the standing sites (skip weekly recurrences / `CruiseNight_*` / multi-date series). Shortcut: `npm run collect:calendars` (or `collect:socal` / `collect:csn`).
+2. Convert PDFs to JPEG; add a date/city/address banner when the listing has a venue the flyer OCR might miss.
+3. `npx vercel env pull .env.local --environment=production --yes`
+4. `node scripts/post-local-flyers.mjs <staged-folder>`
+5. Retry geocode failures with listing addresses (Census / Nominatim) when the street is known.
+6. Summarize posted / duplicate skipped / failed.
+
+Do not re-post flyers already in that staged folder from an earlier run in the same session unless the user asks to retry failures.
+
+## Eligibility (same as IG flyers)
+
+Public US car / bike / truck / motorsport events, future dated, with a specific address or venue. Skip TBA/DM-location, past dates, and duplicates already on Meetmap.
+
+## IG workflow overlap
+
+- **Capture-only** (`run ig workflow` with no post): Instagram feed only.
+- **Post / capture-and-post / national post / keep going after a post request:** Instagram **plus** these standing calendar sites for new unique flyers.

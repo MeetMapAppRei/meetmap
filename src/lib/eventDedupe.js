@@ -8,6 +8,31 @@ const dateKey = (d) => String(d ?? '').slice(0, 10)
 
 const datesEqual = (a, b) => dateKey(a) === dateKey(b)
 
+/** Street address or venue text. Short fragments like a state code are not a place. */
+function normPlace(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/\b(united states|u\.s\.a\.?|usa)\b/g, ' ')
+    .replace(/[.,#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function samePlaceText(left, right) {
+  const a = normPlace(left)
+  const b = normPlace(right)
+  return a.length >= 8 && a === b
+}
+
+function sameAddressOrVenue(a, b) {
+  return (
+    samePlaceText(a.address, b.address) ||
+    samePlaceText(a.location, b.location) ||
+    samePlaceText(a.address, b.location) ||
+    samePlaceText(a.location, b.address)
+  )
+}
+
 const COORDS_CLOSE_KM = 0.35
 
 function coordsLikelySamePlace(lat1, lng1, lat2, lng2) {
@@ -26,6 +51,8 @@ function coordsLikelySamePlace(lat1, lng1, lat2, lng2) {
 export function eventsLikelyDuplicatePair(a, b) {
   if (!a || !b) return false
   if (!datesEqual(a.date, b.date)) return false
+  // Same date and the same street or venue is the same event, even when titles differ.
+  if (sameAddressOrVenue(a, b)) return true
   if (norm(a.title) !== norm(b.title)) return false
   if (norm(a.city) === norm(b.city)) return true
 
