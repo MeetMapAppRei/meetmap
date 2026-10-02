@@ -1,6 +1,7 @@
 import { useTheme } from '../lib/useTheme'
 import { getDefaultDirectionsApp, setDirectionsAppPreference } from '../lib/directionsAppPreference'
 import { useDirectionsAppPreference } from '../lib/useDirectionsAppPreference'
+import { BUY_DEVELOPER_COFFEE_URL, shouldShowBuyDeveloperCoffee } from '../lib/buyDeveloperCoffee'
 
 function ChoiceRow({ label, description, selected, onSelect, isLight }) {
   return (
@@ -59,6 +60,7 @@ export default function AppSettingsModal({ onClose }) {
   const sheetBorder = isLight ? '#E5E5E5' : '#1A1A1A'
   const muted = isLight ? '#666' : '#888'
   const defaultApp = getDefaultDirectionsApp()
+  const showCoffee = shouldShowBuyDeveloperCoffee()
 
   return (
     <div
@@ -180,6 +182,63 @@ export default function AppSettingsModal({ onClose }) {
         >
           Default on this device: {defaultApp === 'apple' ? 'Apple Maps' : 'Google Maps'}
         </p>
+
+        {showCoffee ? (
+          <>
+            <div
+              style={{
+                height: 1,
+                background: isLight ? '#ECECEC' : '#1E1E1E',
+                margin: '20px 0 16px',
+              }}
+            />
+            <div
+              style={{
+                marginBottom: 8,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 11,
+                letterSpacing: 1.2,
+                textTransform: 'uppercase',
+                color: '#FF6B35',
+                fontWeight: 700,
+              }}
+            >
+              Support
+            </div>
+            <a
+              href={BUY_DEVELOPER_COFFEE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'block',
+                width: '100%',
+                boxSizing: 'border-box',
+                textAlign: 'center',
+                textDecoration: 'none',
+                background: '#FF6B35',
+                color: '#0A0A0A',
+                borderRadius: 10,
+                padding: 12,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              Buy the developer a coffee
+            </a>
+            <p
+              style={{
+                margin: '10px 0 0',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: muted,
+              }}
+            >
+              Optional. Does not unlock features. Opens Stripe checkout in a new tab.
+            </p>
+          </>
+        ) : null}
 
         <button
           type="button"
