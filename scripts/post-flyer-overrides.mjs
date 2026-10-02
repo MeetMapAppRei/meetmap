@@ -15,10 +15,7 @@ function loadEnvFile(filePath) {
     if (!m) continue
     const key = m[1].trim()
     let val = m[2].trim()
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1)
     }
     val = val.replace(/\r$/, '').trim()
@@ -107,7 +104,8 @@ const jobs = [
     lat: 28.625253444241,
     lng: -81.315613940692,
     host: 'Street Vybz Entertainment',
-    description: 'Stance Meets Perreo Sep 20, 7 PM-12 AM at 1498 SR-436 N, Casselberry. Food, drinks, vendors, music.',
+    description:
+      'Stance Meets Perreo Sep 20, 7 PM-12 AM at 1498 SR-436 N, Casselberry. Food, drinks, vendors, music.',
     tags: ['car_meet', 'casselberry', 'fl'],
   },
   {
@@ -122,7 +120,8 @@ const jobs = [
     lat: 40.451175982279,
     lng: -74.356139478901,
     host: 'ECR Motorsports',
-    description: 'Halloween car show and 2-step battle Oct 18, 12-4 PM at NM Tints, 501 Hartle St Unit 507.',
+    description:
+      'Halloween car show and 2-step battle Oct 18, 12-4 PM at NM Tints, 501 Hartle St Unit 507.',
     tags: ['car_show', 'sayreville', 'nj', 'halloween'],
   },
   {
@@ -137,7 +136,8 @@ const jobs = [
     lat: 35.29147162825,
     lng: -119.027144532363,
     host: 'Friday Night Lights',
-    description: 'Friday Night Lights car meet Sep 18, 9-11 PM at Floor Decor, 6915 Colony St, Bakersfield.',
+    description:
+      'Friday Night Lights car meet Sep 18, 9-11 PM at Floor Decor, 6915 Colony St, Bakersfield.',
     tags: ['car_meet', 'bakersfield', 'ca'],
   },
   {
@@ -152,7 +152,8 @@ const jobs = [
     lat: 42.204936112543,
     lng: -70.999508042734,
     host: 'Mass Auto Cruises',
-    description: 'MAC pop-up park n chill Sep 18, 7:30-10 PM at AutoZone, 120 Ivory St, Braintree. No revving, burnouts, or music.',
+    description:
+      'MAC pop-up park n chill Sep 18, 7:30-10 PM at AutoZone, 120 Ivory St, Braintree. No revving, burnouts, or music.',
     tags: ['car_meet', 'braintree', 'ma'],
   },
   {
@@ -167,7 +168,8 @@ const jobs = [
     lat: 28.3205188,
     lng: -81.3387292,
     host: '4Saken',
-    description: '4Saken Friday Night Live park and chill Sep 18, 8-10 PM at 2540 Simpson Rd, Kissimmee. All makes and models.',
+    description:
+      '4Saken Friday Night Live park and chill Sep 18, 8-10 PM at 2540 Simpson Rd, Kissimmee. All makes and models.',
     tags: ['car_meet', 'kissimmee', 'fl'],
   },
   {
@@ -182,7 +184,8 @@ const jobs = [
     lat: 27.999456486614,
     lng: -81.92420362927,
     host: 'Perfect',
-    description: 'Park & Chill Sep 18 at 8:30 PM, 3565 Lakeland Highlands Rd, Lakeland. Respect the location.',
+    description:
+      'Park & Chill Sep 18 at 8:30 PM, 3565 Lakeland Highlands Rd, Lakeland. Respect the location.',
     tags: ['car_meet', 'lakeland', 'fl'],
   },
   {
@@ -197,7 +200,8 @@ const jobs = [
     lat: 28.535990672923,
     lng: -81.285851575419,
     host: 'Orlando Meets 407',
-    description: "Boost Up Guns Down pop-up Sep 18 from 9 PM at Sweet Jenny's, 726 S Goldenrod Rd, Orlando.",
+    description:
+      "Boost Up Guns Down pop-up Sep 18 from 9 PM at Sweet Jenny's, 726 S Goldenrod Rd, Orlando.",
     tags: ['car_meet', 'orlando', 'fl'],
   },
   {
@@ -212,7 +216,8 @@ const jobs = [
     lat: 42.0675785,
     lng: -88.2761838,
     host: 'Fullydrivn Car Meets',
-    description: 'Park n chill Sep 18, 6-9 PM at Circle K, 70 Airport Rd, West Dundee. No excessive revving or burnouts.',
+    description:
+      'Park n chill Sep 18, 6-9 PM at Circle K, 70 Airport Rd, West Dundee. No excessive revving or burnouts.',
     tags: ['car_meet', 'west_dundee', 'il'],
   },
   {
@@ -227,7 +232,8 @@ const jobs = [
     lat: 42.0675785,
     lng: -88.2761838,
     host: 'Fullydrivn Car Meets',
-    description: 'Park n chill Sep 25, 6-9 PM at Circle K, 70 Airport Rd, West Dundee. No excessive revving or burnouts.',
+    description:
+      'Park n chill Sep 25, 6-9 PM at Circle K, 70 Airport Rd, West Dundee. No excessive revving or burnouts.',
     tags: ['car_meet', 'west_dundee', 'il'],
   },
   {
@@ -243,7 +249,8 @@ const jobs = [
     lat: 41.096044310771,
     lng: -74.016280688934,
     host: 'Conceited COTW',
-    description: 'Park & chill Sep 19, 8-10:30 PM at 6201 Fashion Dr, Nanuet. Pre-meet 7:30 PM at QuickCheck, 330 NY-59.',
+    description:
+      'Park & chill Sep 19, 8-10:30 PM at 6201 Fashion Dr, Nanuet. Pre-meet 7:30 PM at QuickCheck, 330 NY-59.',
     tags: ['car_meet', 'nanuet', 'ny'],
   },
   {
@@ -258,7 +265,8 @@ const jobs = [
     lat: 39.260322664226,
     lng: -74.741027429977,
     host: 'Upper Township Special Events',
-    description: "Show and go car show Oct 4 at Amanda's Field, 10 Sunset Dr, Petersburg NJ. Show cars 9 AM; event 11 AM-5 PM.",
+    description:
+      "Show and go car show Oct 4 at Amanda's Field, 10 Sunset Dr, Petersburg NJ. Show cars 9 AM; event 11 AM-5 PM.",
     tags: ['car_show', 'petersburg', 'nj'],
   },
   {
@@ -274,7 +282,8 @@ const jobs = [
     lat: 42.329616043792,
     lng: -71.096027025199,
     host: 'Import Evolution',
-    description: 'Import Evolution season-closer meet Sep 27 at Roxbury Community College, 1234 Columbus Ave.',
+    description:
+      'Import Evolution season-closer meet Sep 27 at Roxbury Community College, 1234 Columbus Ave.',
     tags: ['car_meet', 'roxbury', 'ma', 'import'],
   },
 ]
@@ -328,15 +337,20 @@ for (const job of jobs) {
     photo_url: photoUrl,
     featured: false,
   }
-  const { data, error } = await sb.from('events').insert([row]).select('id,title,date,city').single()
+  const { data, error } = await sb
+    .from('events')
+    .insert([row])
+    .select('id,title,date,city')
+    .single()
   if (error) {
     console.log(`  failed: ${error.message}`)
     continue
   }
-  await sb.from('event_statuses').upsert(
-    [{ event_id: data.id, status: 'active', updated_at: new Date().toISOString() }],
-    { onConflict: 'event_id' },
-  )
+  await sb
+    .from('event_statuses')
+    .upsert([{ event_id: data.id, status: 'active', updated_at: new Date().toISOString() }], {
+      onConflict: 'event_id',
+    })
   console.log(`  posted: ${data.id}  ${data.title} (${data.date})`)
   posted++
 }
